@@ -1,3 +1,20 @@
+C-SKY on QEMU
+===========
+这是以QEMU项目为基础，添加了C-SKY体系结构支持的项目。
+
+暂时以2.8版本为主，之后会支持更多版本。
+
+
+
+编译
+===========
+
+mkdir build
+../configure --target-list=cskyv2-softmmu
+make
+
+
+===============================================
          QEMU README
          ===========
 
