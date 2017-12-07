@@ -60,7 +60,7 @@ static void virt_init(MachineState *machine)
          */
         intc = sysbus_create_simple(
                         "csky_intc",
-                        0x1ffff000,
+                        0xfffff000,
                         *csky_intc_init_cpu(&cpu->env));
 
         /*
@@ -69,7 +69,7 @@ static void virt_init(MachineState *machine)
         csky_timer_set_freq(virt_binfo.freq);
         sysbus_create_varargs(
                         "csky_timer",
-                        0x1fffd000,
+                        0xffffd000,
                         qdev_get_gpio_in(intc, 1),
                         qdev_get_gpio_in(intc, 2),
                         NULL);
@@ -78,19 +78,19 @@ static void virt_init(MachineState *machine)
          * use 16650a uart.
          */
         csky_uart_create(
-                        0x1fffe000,
+                        0xffffe000,
                         qdev_get_gpio_in(intc, 3),
                         serial_hds[0]);
 
         /*
          * for qemu exit, use cmd poweroff.
          */
-        sysbus_create_simple("csky_exit", 0x1fffc000, NULL);
+        sysbus_create_simple("csky_exit", 0xffffc000, NULL);
 
         /*
          * add net, io-len is 2K.
          */
-        csky_mac_v2_create(&nd_table[0], 0x1fffa000, qdev_get_gpio_in(intc, 4));
+        csky_mac_v2_create(&nd_table[0], 0xffffa000, qdev_get_gpio_in(intc, 4));
 
         /*
          * boot up kernel with unaligned_access and mmu on.
