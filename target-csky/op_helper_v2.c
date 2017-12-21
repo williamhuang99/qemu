@@ -1131,6 +1131,8 @@ void helper_mcir_write(CPUCSKYState *env, uint32_t rx)
     */
     if ((rx & CSKY_MCIR_TTLBINV_ALL_MASK) && (env->features & ABIV2_TEE)) {
         helper_ttlbinv_all(env);
+    } else if (rx & CSKY_MCIR_TLBINV_IDX_MASK) {
+        helper_tlbinv_idx(env);
     } else if (rx & CSKY_MCIR_TLBINV_ALL_MASK) {
         helper_tlbinv_all(env);
     } else if (rx & CSKY_MCIR_TLBINV_MASK) {

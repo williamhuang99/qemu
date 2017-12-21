@@ -32,7 +32,7 @@ static void virt_init(MachineState *machine)
         MemoryRegion *sysmem = get_system_memory();
         MemoryRegion *ram = g_new(MemoryRegion, 1);
 
-        memory_region_allocate_system_memory(ram, NULL, "ram", 0x1f400000);
+        memory_region_allocate_system_memory(ram, NULL, "ram", 0x28000000);
         memory_region_add_subregion(sysmem, 0, ram);
 
         /*

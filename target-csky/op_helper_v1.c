@@ -1621,6 +1621,8 @@ void helper_mcir_write(CPUCSKYState *env, uint32_t rx)
 
     if (rx & CSKY_MCIR_TLBINV_MASK) {
         helper_tlbinv(env);
+    } else if (rx & CSKY_MCIR_TLBINV_IDX_MASK) {
+        helper_tlbinv_idx(env);
     } else if (rx & CSKY_MCIR_TLBP_MASK) {
         env->tlb_context->helper_tlbp(env);
     } else if (rx & CSKY_MCIR_TLBWI_MASK) {

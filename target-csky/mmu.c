@@ -57,6 +57,21 @@ void helper_ttlbinv_all(CPUCSKYState *env)
     tlb_flush(cs, 1);
 }
 
+void helper_tlbinv_idx(CPUCSKYState *env)
+{
+    CPUState *cs = CPU(csky_env_get_cpu(env));
+    csky_tlb_t *ptlb;
+    int j;
+
+    ptlb = &env->tlb_context->tlb[env->mmu.mir & 0x7f];
+    ptlb->V0 = 0;
+    ptlb->V1 = 0;
+    for (j = ptlb->VPN;
+         j <= (ptlb->VPN | env->mmu.mpr | 0x1000); j += 0x1000) {
+        tlb_flush_page(cs, j);
+    }
+}
+
 void helper_tlbinv_all(CPUCSKYState *env)
 {
     CPUState *cs = CPU(csky_env_get_cpu(env));
@@ -94,6 +109,10 @@ void csky_tlbwi(CPUCSKYState *env)
     CPUState *cs = CPU(csky_env_get_cpu(env));
 
     ptlb = &env->tlb_context->tlb[env->mmu.mir & 0x7f];
+    int j;
+    for (j = ptlb->VPN; j <= (ptlb->VPN | env->mmu.mpr | 0x1000); j += 0x1000) {
+        tlb_flush_page(cs, j);
+    }
 
     ptlb->VPN   = env->mmu.meh & ~(env->mmu.mpr | 0x1fff);
     ptlb->ASID  = env->mmu.meh & 0xff;
@@ -115,7 +134,6 @@ void csky_tlbwi(CPUCSKYState *env)
     ptlb->PageMask = env->mmu.mpr;
 #endif
 
-    int j;
     for (j = ptlb->VPN; j <= (ptlb->VPN | env->mmu.mpr | 0x1000); j += 0x1000) {
         tlb_flush_page(cs, j);
     }
@@ -126,6 +144,7 @@ void csky_tlbwr(CPUCSKYState *env)
     csky_tlb_t *ptlb;
     uint32_t index;
     CPUState *cs = CPU(csky_env_get_cpu(env));
+    int j;
 
     /* index = robin,VPN[18:13]   page size: 4KB*/
     /* index = robin,VPN[20:15]   page size: 16KB*/
@@ -140,6 +159,10 @@ void csky_tlbwr(CPUCSKYState *env)
     }
     ptlb =  &env->tlb_context->tlb[index];
 
+    for (j = ptlb->VPN; j <= (ptlb->VPN | env->mmu.mpr | 0x1000); j += 0x1000) {
+        tlb_flush_page(cs, j);
+    }
+
     ptlb->VPN   = env->mmu.meh & ~(env->mmu.mpr | 0x1fff);
     ptlb->ASID  = env->mmu.meh & 0xff;
     ptlb->G     = env->mmu.mel0 & env->mmu.mel1 & 0x1;
@@ -160,7 +183,6 @@ void csky_tlbwr(CPUCSKYState *env)
     ptlb->PageMask = env->mmu.mpr;
 #endif
 
-    int j;
     for (j = ptlb->VPN; j <= (ptlb->VPN | env->mmu.mpr | 0x1000); j += 0x1000) {
         tlb_flush_page(cs, j);
     }
@@ -176,7 +198,7 @@ void csky_tlbp(CPUCSKYState *env)
     ptlb =  &env->tlb_context->tlb[index];
 
     if (ptlb->VPN == (env->mmu.meh & ~(env->mmu.mpr | 0x1fff))
-            && ptlb->ASID == (env->mmu.meh & 0xff)) {
+            && (ptlb->G == 1 || ptlb->ASID == (env->mmu.meh & 0xff))) {
         env->mmu.mir = index;
         return;
     }
@@ -184,7 +206,7 @@ void csky_tlbp(CPUCSKYState *env)
     index += 64;
     ptlb =  &env->tlb_context->tlb[index];
     if (ptlb->VPN == (env->mmu.meh & ~(env->mmu.mpr | 0x1fff))
-            && ptlb->ASID == (env->mmu.meh & 0xff)) {
+            && (ptlb->G == 1 || ptlb->ASID == (env->mmu.meh & 0xff))) {
         env->mmu.mir = index;
         return;
     }

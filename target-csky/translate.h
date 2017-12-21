@@ -94,6 +94,7 @@ void csky_tlbwr(CPUCSKYState *env);
 void csky_tlbp(CPUCSKYState *env);
 void csky_tlbr(CPUCSKYState *env);
 void helper_ttlbinv_all(CPUCSKYState *env);
+void helper_tlbinv_idx(CPUCSKYState *env);
 void helper_tlbinv_all(CPUCSKYState *env);
 void helper_tlbinv(CPUCSKYState *env);
 int nommu_get_physical_address(struct CPUCSKYState *env, hwaddr *physical,
