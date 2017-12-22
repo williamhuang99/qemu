@@ -3,6 +3,7 @@
 #include "sysemu/sysemu.h"
 #include "exec/address-spaces.h"
 #include "net/net.h"
+#include "sysemu/device_tree.h"
 
 #include "target-csky/cpu.h"
 #include "hw/sysbus.h"
@@ -18,6 +19,49 @@ static struct csky_boot_info virt_binfo = {
         .freq           = 50000000ll,
 };
 
+static bool get_ramsize_from_dtb(unsigned int *ram_size, unsigned int *base)
+{
+    void *fdt = NULL;
+    int size;
+    int lenp = 0;
+    unsigned int *res;
+    virt_binfo.dtb_filename = qemu_opt_get(qemu_get_machine_opts(), "dtb");
+    if (virt_binfo.dtb_filename) {
+        char *filename;
+        filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, virt_binfo.dtb_filename);
+        if (!filename) {
+            fprintf(stderr, "Couldn't open dtb file %s\n",
+                    virt_binfo.dtb_filename);
+            return false;
+        }
+
+        fdt = load_device_tree(filename, &size);
+        if (!fdt) {
+            fprintf(stderr, "Couldn't open dtb file %s\n", filename);
+            g_free(filename);
+            return false;
+        }
+        g_free(filename);
+    } else {
+        fprintf(stderr, "Board was unable to create a dtb blob\n");
+        return false;
+    }
+
+    qemu_fdt_dumpdtb(fdt, size);
+
+    /* get reg<base size> to point "res" */
+    res = (unsigned int *)
+        qemu_fdt_getprop(fdt, "/memory", "reg", &lenp, &error_fatal);
+
+    if (lenp == 8) {
+        *base = __builtin_bswap32(*res);
+        *ram_size = __builtin_bswap32(*(res + 1));
+        return true;
+    } else {
+        return false;
+    }
+}
+
 static void virt_init(MachineState *machine)
 {
         ObjectClass     *cpu_oc;
@@ -25,15 +69,21 @@ static void virt_init(MachineState *machine)
         CSKYCPU         *cpu;
 
         DeviceState     *intc;
-
+        unsigned int ram_size =0, base = 0;
         /*
          * Prepare RAM.
          */
         MemoryRegion *sysmem = get_system_memory();
         MemoryRegion *ram = g_new(MemoryRegion, 1);
 
-        memory_region_allocate_system_memory(ram, NULL, "ram", 0x28000000);
-        memory_region_add_subregion(sysmem, 0, ram);
+        /* read ram base and size from dtb file. */
+        if (!get_ramsize_from_dtb(&ram_size, &base)) {
+            fprintf(stderr, "qemu: fail to read RAM base/size in dtb '%s'\n",
+                    virt_binfo.dtb_filename);
+            exit(1);
+        }
+        memory_region_allocate_system_memory(ram, NULL, "ram", ram_size);
+        memory_region_add_subregion(sysmem, base, ram);
 
         /*
          * Prepare CPU
