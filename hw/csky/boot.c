@@ -252,7 +252,7 @@ static void csky_load_kernel_notify(Notifier *notifier, void *data)
 
         if (kernel_size < 0) {
             kernel_size = load_uimage(info->kernel_filename, &entry, NULL,
-                                      &is_linux, NULL, NULL);
+                                      NULL, cpu_csky_sseg0_to_phys, env);
             kernel_flags = KERNEL_UIMAGE;
         }
 
