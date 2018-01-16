@@ -29,6 +29,7 @@
 
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
+#include "exec/semihost.h"
 
 /*******************************/
 #define sp 14
@@ -874,8 +875,6 @@ static inline void gen_mul16(DisasContext *ctx, uint32_t sop, int rz, int rx)
     }
 }
 
-
-
 static void gen_branch16(DisasContext *ctx, uint32_t op, int offset)
 {
     switch (op) {
@@ -883,7 +882,12 @@ static void gen_branch16(DisasContext *ctx, uint32_t op, int offset)
         if (offset == 0) {
             /*bkpt16*/
             if (is_gdbserver_start == TRUE) {
-                generate_exception(ctx, EXCP_DEBUG);
+                /* semihost-config */
+                if (semihosting_enabled()) {
+                    generate_exception(ctx, EXCP_CSKY_SEMIHOST);
+                } else {
+                    generate_exception(ctx, EXCP_DEBUG);
+                }
                 ctx->is_jmp = DISAS_JUMP;
             } else {
                 generate_exception(ctx, EXCP_CSKY_BKPT);

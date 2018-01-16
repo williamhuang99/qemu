@@ -61,6 +61,7 @@
 #define EXCP_CSKY_TRAP3             19
 #define EXCP_CSKY_TLB_READ_INVALID  20
 #define EXCP_CSKY_TLB_WRITE_INVALID 21
+#define EXCP_CSKY_SEMIHOST          28
 #define EXCP_CSKY_FLOAT             30
 #define EXCP_CSKY_CPU_END           31
 
@@ -317,7 +318,7 @@ bool csky_cpu_exec_interrupt(CPUState *cs, int interrupt_request);
 void csky_nommu_init(CPUCSKYState *env);
 void csky_cpu_dump_state(CPUState *cs, FILE *f, fprintf_function cpu_fprintf,
                          int flags);
-
+target_ulong csky_do_semihosting(CPUCSKYState *env);
 #define cpu_init(cpu_model) CPU(cpu_csky_init(cpu_model))
 #define cpu_signal_handler  cpu_csky_signal_handler
 #define cpu_list    csky_cpu_list
