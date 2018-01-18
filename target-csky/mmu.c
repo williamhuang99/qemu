@@ -70,6 +70,7 @@ void helper_tlbinv_idx(CPUCSKYState *env)
          j <= (ptlb->VPN | env->mmu.mpr | 0x1000); j += 0x1000) {
         tlb_flush_page(cs, j);
     }
+    memset(ptlb, 0, sizeof(struct csky_tlb_t));
 }
 
 void helper_tlbinv_all(CPUCSKYState *env)
@@ -99,6 +100,7 @@ void helper_tlbinv(CPUCSKYState *env)
                 tlb_flush_page(cs, j);
             }
         }
+        memset(ptlb, 0, sizeof(struct csky_tlb_t));
         ptlb++;
     }
 }
