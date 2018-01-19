@@ -31,9 +31,9 @@ void helper_exception(CPUCSKYState *env, uint32_t excp)
             insn = cpu_lduw_code(env, env->pc);
             if (insn == 0) {
                 magic = cpu_lduw_code(env, env->pc + 2);
-                if (magic == 0x4d49) {
+                if (magic == 0x7fff) {
                     magic = cpu_lduw_code(env, env->pc + 4);
-                    if (magic == 0x5345) {
+                    if (magic == 0x7fff) {
                         cs->exception_index = EXCP_CSKY_SEMIHOST;
                     }
                 }

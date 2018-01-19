@@ -23,7 +23,7 @@
 #include "cpu.h"
 #include "qemu/cutils.h"
 #include "exec/softmmu-semi.h"
-
+#include "qemu/log.h"
 
 #define CSKY_SEMIHOST_EXIT            0x00
 #define CSKY_SEMIHOST_INIT            0x01
@@ -72,25 +72,33 @@ struct gdb_timeval {
 #define O_BINARY 0
 #endif
 
-/* remote serial protocol also define O_EXCL
- * but libc not support it
- */
+#define GDB_O_RDONLY   0x0
+#define GDB_O_WRONLY   0x1
+#define GDB_O_RDWR     0x2
+#define GDB_O_APPEND   0x8
+#define GDB_O_CREAT  0x200
+#define GDB_O_TRUNC  0x400
+#define GDB_O_EXCL   0x800
 
+static int translate_openflags(int flags)
+{
+    int hf;
 
-static int open_modeflags[12] = {
-    O_RDONLY,
-    O_RDONLY | O_BINARY,
-    O_RDWR,
-    O_RDWR | O_BINARY,
-    O_WRONLY | O_CREAT | O_TRUNC,
-    O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,
-    O_RDWR | O_CREAT | O_TRUNC,
-    O_RDWR | O_CREAT | O_TRUNC | O_BINARY,
-    O_WRONLY | O_CREAT | O_APPEND,
-    O_WRONLY | O_CREAT | O_APPEND | O_BINARY,
-    O_RDWR | O_CREAT | O_APPEND,
-    O_RDWR | O_CREAT | O_APPEND | O_BINARY
-};
+    if (flags & GDB_O_WRONLY)
+        hf = O_WRONLY;
+    else if (flags & GDB_O_RDWR)
+        hf = O_RDWR;
+    else
+        hf = O_RDONLY;
+
+    if (flags & GDB_O_APPEND) hf |= O_APPEND;
+    if (flags & GDB_O_CREAT) hf |= O_CREAT;
+    if (flags & GDB_O_TRUNC) hf |= O_TRUNC;
+    if (flags & GDB_O_EXCL) hf |= O_EXCL;
+
+    return hf;
+}
+
 
 #ifndef TARGET_WORDS_BIGENDIAN
 
@@ -156,7 +164,15 @@ static bool translate_stat(CPUCSKYState *env, target_ulong addr)
     return true;
 }
 #endif
-
+static void csky_semi_return_u32(CPUCSKYState *env, uint32_t ret, uint32_t err)
+{
+    target_ulong reg1 = env->regs[1];
+    env->regs[0] = ret;
+    if (put_user_u32(err, reg1)) {
+        qemu_log_mask(LOG_GUEST_ERROR, "csky-semihosting: return value "
+                      "discarded because argument block not writable\n");
+    }
+}
 static void csky_semi_cb(CPUState *cs, target_ulong ret, target_ulong err)
 {
     CSKYCPU *cpu = CSKY_CPU(cs);
@@ -245,25 +261,27 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "open,%s,%x,1a4", arg0,
                                   (int)arg1 + 1, arg2);
+            return ret;
         } else {
-            ret = open(s, open_modeflags[arg2], 0644);
+            ret = open(s, translate_openflags(arg2), 0644);
         }
         unlock_user(s, arg0, 0);
-        return ret;
+        break;
     case CSKY_SEMIHOST_CLOSE:
         /* fixme: stdin/out/err */
         GET_ARG(0);
         fd = arg0;
-        if (arg0 < 2) {
+        if (arg0 > 2) {
             if (use_gdb_syscalls()) {
                 ret = csky_gdb_syscall(cpu, csky_semi_cb, "close,%x", arg0);
+                return ret;
             } else {
                 ret = close(fd);
             }
         } else {
             ret = 0;
         }
-        return ret;
+        break;
     case CSKY_SEMIHOST_WRITE:
         GET_ARG(0);
         GET_ARG(1);
@@ -272,6 +290,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "write,%x,%x,%x",
                                    arg0, arg1, len);
+            return ret;
         } else {
             s = lock_user(VERIFY_READ, arg1, len, 1);
             if (!s) {
@@ -280,7 +299,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
             ret = write(arg0, s, len);
             unlock_user(s, arg1, 0);
         }
-        return ret;
+        break;
     case CSKY_SEMIHOST_READ:
         GET_ARG(0);
         GET_ARG(1);
@@ -289,8 +308,9 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "read,%x,%x,%x",
                                    arg0, arg1, len);
+            return ret;
         } else {
-            s = lock_user(VERIFY_READ, arg1, len, 0);
+            s = lock_user(VERIFY_WRITE, arg1, len, 0);
             if (!s) {
                 return (uint32_t)-1;
             }
@@ -299,7 +319,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
             } while (ret == -1 && errno == EINTR);
             unlock_user(s, arg1, len);
         }
-        return ret;
+        break;
     case CSKY_SEMIHOST_SEEK:
         GET_ARG(0);
         GET_ARG(1);
@@ -307,15 +327,11 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "lseek,%x,%x,%x",
                                    arg0, arg1, arg2);
+            return ret;
         } else {
             ret = lseek(arg0, arg1, arg2);
         }
-        if (ret == (uint32_t)-1) {
-            return -1;
-        } else {
-            return 0;
-        }
-
+        break;
     case CSKY_SEMIHOST_RENAME:
         GET_ARG(0);
         GET_ARG(1);
@@ -324,6 +340,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "rename,%s,%s",
                                    arg0, (int)arg1+1, arg2, (int)arg3+1);
+            return ret;
         } else {
             char *s2;
             s = lock_user_string(arg0);
@@ -336,12 +353,6 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
                 unlock_user(s2, arg2, 0);
             if (s)
                 unlock_user(s, arg0, 0);
-            return ret;
-        }
-        if (ret == (uint32_t)-1) {
-            return -1;
-        } else {
-            return 0;
         }
         break;
     case CSKY_SEMIHOST_UNLINK:
@@ -350,6 +361,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "unlink,%s",
                                   arg0, (int)arg1+1);
+            return ret;
         } else {
             s = lock_user_string(arg0);
             if (!s) {
@@ -358,7 +370,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
             ret =  remove(s);
             unlock_user(s, arg0, 0);
         }
-        return ret;
+        break;
     case CSKY_SEMIHOST_STAT:
         GET_ARG(0);
         GET_ARG(1);
@@ -367,6 +379,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "stat,%s,%x",
                            arg0, (int)arg1 + 1, arg2);
+            return ret;
         } else {
             struct stat st;
             s = lock_user_string(arg0);
@@ -378,7 +391,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
                 unlock_user(s, arg0, 0);
             }
         }
-        return ret;
+        break;
     case CSKY_SEMIHOST_FSTAT:
         GET_ARG(0);
         GET_ARG(1);
@@ -386,18 +399,20 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "fstat,%x,%x",
                            arg0, arg1);
+            return ret;
         } else {
             struct stat st;
             ret = fstat(arg0, &st);
         }
-        return ret;
-   case CSKY_SEMIHOST_TIME:
+        break;
+    case CSKY_SEMIHOST_TIME:
         GET_ARG(0);
         GET_ARG(1);
         sarg0 = arg0;
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "gettimeofday,%x,%x",
                            arg0, arg1);
+            return ret;
         } else {
             qemu_timeval tv;
             struct gdb_timeval *p;
@@ -413,21 +428,23 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
                 }
             }
         }
-        return ret;
+        break;
     case CSKY_SEMIHOST_ISATTY:
         GET_ARG(0);
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "isatty,%x", arg0);
+            return ret;
         } else {
             ret = isatty(arg0);
         }
-        return ret;
+        break;
     case CSKY_SEMIHOST_SYSTEM:
         GET_ARG(0);
         GET_ARG(1);
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "system,%s",
                                    arg0, (int)arg1+1);
+            return ret;
         } else {
             s = lock_user_string(arg0);
             if (!s) {
@@ -438,10 +455,12 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
             }
 
         }
-        return ret;
+        break;
     default:
         fprintf(stderr, "qemu: Unsupported SemiHosting 0x%02x\n", nr);
         cpu_dump_state(cs, stderr, fprintf, 0);
         abort();
     }
+    csky_semi_return_u32(env, ret, errno);
+    return ret;
 }
