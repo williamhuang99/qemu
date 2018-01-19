@@ -217,11 +217,9 @@ void csky_cpu_do_interrupt(CPUState *cs)
     int af_bk;
 
     if ((cs->exception_index == EXCP_CSKY_SEMIHOST)) {
-        if (env->regs[7] == 0x53454d49) {
             csky_do_semihosting(env);
-        } else { /* fixme: process as EXCP_DEBUG */
+            env->pc += 6;
             return;
-        }
     }
     if ((cs->exception_index == EXCP_CSKY_TRACE)
             && cs->interrupt_request

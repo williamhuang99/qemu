@@ -24,19 +24,25 @@
 #include "qemu/cutils.h"
 #include "exec/softmmu-semi.h"
 
-#define CSKY_SEMIHOST_OPEN            0x01
-#define CSKY_SEMIHOST_CLOSE           0x02
-#define CSKY_SEMIHOST_WRITE           0x03
+
+#define CSKY_SEMIHOST_EXIT            0x00
+#define CSKY_SEMIHOST_INIT            0x01
+#define CSKY_SEMIHOST_OPEN            0x02
+#define CSKY_SEMIHOST_CLOSE           0x03
 #define CSKY_SEMIHOST_READ            0x04
-#define CSKY_SEMIHOST_SEEK            0x05
-#define CSKY_SEMIHOST_RENAME          0x06
-#define CSKY_SEMIHOST_UNLINK          0x07
-#define CSKY_SEMIHOST_STAT            0x08
-#define CSKY_SEMIHOST_FSTAT           0x09
-#define CSKY_SEMIHOST_TIME            0x0a
-#define CSKY_SEMIHOST_ISATTY          0x0b
-#define CSKY_SEMIHOST_SYSTEM          0x0c
-#define CSKY_SEMIHOST_ERRNO           0x0d
+#define CSKY_SEMIHOST_WRITE           0x05
+#define CSKY_SEMIHOST_SEEK            0x06
+#define CSKY_SEMIHOST_RENAME          0x07
+#define CSKY_SEMIHOST_UNLINK          0x08
+#define CSKY_SEMIHOST_STAT            0x09
+#define CSKY_SEMIHOST_FSTAT           0x0a
+#define CSKY_SEMIHOST_TIME            0x0b
+#define CSKY_SEMIHOST_ISATTY          0x0c
+#define CSKY_SEMIHOST_SYSTEM          0x0d
+
+static target_ulong sarg0, sarg1, sarg2;
+
+
 
 typedef uint32_t gdb_mode_t;
 typedef uint32_t gdb_time_t;
@@ -70,28 +76,7 @@ struct gdb_timeval {
  * but libc not support it
  */
 
-#define GDB_O_RDONLY  0x000
-#define GDB_O_WRONLY  0x001
-#define GDB_O_RDWR    0x002
-#define GDB_O_APPEND  0x008
-#define GDB_O_CREAT   0x200
-#define GDB_O_TRUNC   0x400
-#define GDB_O_BINARY  0
 
-static int gdb_open_modeflags[12] = {
-    GDB_O_RDONLY,
-    GDB_O_RDONLY | GDB_O_BINARY,
-    GDB_O_RDWR,
-    GDB_O_RDWR | GDB_O_BINARY,
-    GDB_O_WRONLY | GDB_O_CREAT | GDB_O_TRUNC,
-    GDB_O_WRONLY | GDB_O_CREAT | GDB_O_TRUNC | GDB_O_BINARY,
-    GDB_O_RDWR | GDB_O_CREAT | GDB_O_TRUNC,
-    GDB_O_RDWR | GDB_O_CREAT | GDB_O_TRUNC | GDB_O_BINARY,
-    GDB_O_WRONLY | GDB_O_CREAT | GDB_O_APPEND,
-    GDB_O_WRONLY | GDB_O_CREAT | GDB_O_APPEND | GDB_O_BINARY,
-    GDB_O_RDWR | GDB_O_CREAT | GDB_O_APPEND,
-    GDB_O_RDWR | GDB_O_CREAT | GDB_O_APPEND | GDB_O_BINARY
-};
 static int open_modeflags[12] = {
     O_RDONLY,
     O_RDONLY | O_BINARY,
@@ -107,46 +92,104 @@ static int open_modeflags[12] = {
     O_RDWR | O_CREAT | O_APPEND | O_BINARY
 };
 
-static int syscall_errno;
-static void translate_stat(CPUCSKYState *env, target_ulong addr, struct stat *s)
+#ifndef TARGET_WORDS_BIGENDIAN
+
+#define TARGET_U32_SWAP(field)  do {                                     \
+    p->field = be32_to_cpu(p->field);                                    \
+    if (put_user_u32(addr + offsetof(typeof(*p), field), p->field)) {    \
+         unlock_user(p, addr, sizeof(*p));                               \
+         return false;                                                   \
+    }                                                                    \
+} while (0)
+#define TARGET_U64_SWAP(field)  do {                                     \
+    p->field = be64_to_cpu(p->field);                                    \
+    if (put_user_u64(addr + offsetof(typeof(*p), field), p->field)) {    \
+         unlock_user(p, addr, sizeof(*p));                               \
+         return false;                                                   \
+    }                                                                    \
+} while (0)
+
+static bool translate_timeval(CPUCSKYState *env, target_ulong addr) {
+    struct gdb_timeval *p;
+    if (!(p = lock_user(VERIRY_READ, addr, sizeof(struct gdb_timeval), 1))) {
+        return false;
+    }
+    TARGET_U32_SWAP(tv_sec);
+    TARGET_U64_SWAP(tv_usec);
+    unlock_user(p, addr, sizeof(struct gdb_timeval));
+    return true;
+}
+
+static bool translate_stat(CPUCSKYState *env, target_ulong addr)
 {
     struct csky_gdb_stat *p;
 
     if (!(p = lock_user(VERIFY_WRITE, addr, sizeof(struct csky_gdb_stat), 0))) {
-        return;
+        return false;
     }
-    p->gdb_st_dev = cpu_to_be32(s->st_dev);
-    p->gdb_st_ino = cpu_to_be32(s->st_ino);
-    p->gdb_st_mode = cpu_to_be32(s->st_mode);
-    p->gdb_st_nlink = cpu_to_be32(s->st_nlink);
-    p->gdb_st_uid = cpu_to_be32(s->st_uid);
-    p->gdb_st_gid = cpu_to_be32(s->st_gid);
-    p->gdb_st_rdev = cpu_to_be32(s->st_rdev);
-    p->gdb_st_size = cpu_to_be64(s->st_size);
+    TARGET_U32_SWAP(gdb_st_dev);
+    TARGET_U32_SWAP(gdb_st_ino);
+    TARGET_U32_SWAP(gdb_st_mode);
+    TARGET_U32_SWAP(gdb_st_nlink);
+    TARGET_U32_SWAP(gdb_st_uid);
+    TARGET_U32_SWAP(gdb_st_gid);
+    TARGET_U32_SWAP(gdb_st_rdev);
+    TARGET_U32_SWAP(gdb_st_size);
 #ifdef _WIN32
     /* Windows stat is missing some fields.  */
-    p->gdb_st_blksize = 0;
-    p->gdb_st_blocks = 0;
+    if (put_user_u32(addr + offsetof(typeof(*p), gdb_st_blksize), 0)) {
+         unlock_user(p, addr, sizeof(struct csky_gdb_stat));
+         return false;
+    }
+    if (put_user_u32(addr + offsetof(typeof(*p), gdb_st_blocks), 0)) {
+         unlock_user(p, addr, sizeof(struct csky_gdb_stat));
+         return false;
+    }
 #else
-    p->gdb_st_blksize = cpu_to_be64(s->st_blksize);
-    p->gdb_st_blocks = cpu_to_be64(s->st_blocks);
+    TARGET_U32_SWAP(gdb_st_blksize);
+    TARGET_U32_SWAP(gdb_st_blocks);
 #endif
-    p->gdb_st_atime = cpu_to_be32(s->st_atime);
-    p->gdb_st_mtime = cpu_to_be32(s->st_mtime);
-    p->gdb_st_ctime = cpu_to_be32(s->st_ctime);
+    TARGET_U32_SWAP(gdb_st_atime);
+    TARGET_U32_SWAP(gdb_st_mtime);
+    TARGET_U32_SWAP(gdb_st_ctime);
     unlock_user(p, addr, sizeof(struct csky_gdb_stat));
+    return true;
 }
+#endif
+
 static void csky_semi_cb(CPUState *cs, target_ulong ret, target_ulong err)
 {
     CSKYCPU *cpu = CSKY_CPU(cs);
     CPUCSKYState *env = &cpu->env;
     target_ulong reg0 = env->regs[0];
+    target_ulong reg1 = env->regs[1];
 
     if (ret == (target_ulong)-1) {
-        reg0 = ret;
-        syscall_errno = err;
+        put_user_u32(err, reg1);
+    } else {
+#ifndef TARGET_WORDS_BIGENDIAN
+        switch (reg0) {
+        case CSKY_SEMIHOST_TIME:
+            if(!translate_timeval(env, sarg0)) {
+                ret = -1;
+            }
+            break;
+        case CSKY_SEMIHOST_STAT:
+            if(!translate_stat(env, sarg2)) {
+                ret = -1;
+            }
+            break;
+        case CSKY_SEMIHOST_FSTAT:
+            if(!translate_stat(env, sarg1)) {
+                ret = -1;
+            }
+            break;
+        default:
+            break;
+        }
+#endif
     }
-    env->regs[0] = reg0;
+    env->regs[0] = ret;
 }
 
 static target_ulong csky_gdb_syscall(CSKYCPU *cpu, gdb_syscall_complete_cb cb,
@@ -186,6 +229,10 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
     args = env->regs[1];
 
     switch (nr) {
+    case CSKY_SEMIHOST_EXIT:
+        gdb_exit(env, env->regs[1]);
+        exit(env->regs[1]);
+        break;
     case CSKY_SEMIHOST_OPEN:
         GET_ARG(0);
         GET_ARG(1);
@@ -195,13 +242,9 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
             /* FIXME - should this error code be -TARGET_EFAULT ? */
             return (uint32_t)-1;
         }
-        if (arg2 >= 12) {
-            unlock_user(s, arg0, 0);
-            return (uint32_t)-1;
-        }
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "open,%s,%x,1a4", arg0,
-                                  (int)arg1 + 1, gdb_open_modeflags[arg2]);
+                                  (int)arg1 + 1, arg2);
         } else {
             ret = open(s, open_modeflags[arg2], 0644);
         }
@@ -247,7 +290,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "read,%x,%x,%x",
                                    arg0, arg1, len);
         } else {
-            s = lock_user(VERIFY_WRITE, arg1, len, 0);
+            s = lock_user(VERIFY_READ, arg1, len, 0);
             if (!s) {
                 return (uint32_t)-1;
             }
@@ -320,6 +363,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
         GET_ARG(0);
         GET_ARG(1);
         GET_ARG(2);
+        sarg2 = arg2;
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "stat,%s,%x",
                            arg0, (int)arg1 + 1, arg2);
@@ -333,28 +377,24 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
                 ret = stat(s, &st);
                 unlock_user(s, arg0, 0);
             }
-            if (ret == 0) {
-                translate_stat(env, arg2, &st);
-            }
         }
         return ret;
     case CSKY_SEMIHOST_FSTAT:
         GET_ARG(0);
         GET_ARG(1);
+        sarg1 = arg1;
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "fstat,%x,%x",
                            arg0, arg1);
         } else {
             struct stat st;
             ret = fstat(arg0, &st);
-            if (ret == 0) {
-                translate_stat(env, arg1, &st);
-            }
         }
         return ret;
    case CSKY_SEMIHOST_TIME:
         GET_ARG(0);
         GET_ARG(1);
+        sarg0 = arg0;
         if (use_gdb_syscalls()) {
             ret = csky_gdb_syscall(cpu, csky_semi_cb, "gettimeofday,%x,%x",
                            arg0, arg1);
@@ -367,8 +407,8 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
                                     arg0, sizeof(struct gdb_timeval), 0))) {
                     ret = -1;
                 } else {
-                    p->tv_sec = cpu_to_be32(tv.tv_sec);
-                    p->tv_usec = cpu_to_be64(tv.tv_usec);
+                    p->tv_sec = tv.tv_sec;
+                    p->tv_usec = tv.tv_usec;
                     unlock_user(p, arg0, sizeof(struct gdb_timeval));
                 }
             }
@@ -399,8 +439,6 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
 
         }
         return ret;
-    case CSKY_SEMIHOST_ERRNO:
-        return syscall_errno;
     default:
         fprintf(stderr, "qemu: Unsupported SemiHosting 0x%02x\n", nr);
         cpu_dump_state(cs, stderr, fprintf, 0);

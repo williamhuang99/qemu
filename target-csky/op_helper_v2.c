@@ -19,11 +19,27 @@
 #include "exec/helper-proto.h"
 #include "exec/cpu_ldst.h"
 #include "exec/exec-all.h"
-
+#include "exec/semihost.h"
 void helper_exception(CPUCSKYState *env, uint32_t excp)
 {
     CPUState *cs = CPU(csky_env_get_cpu(env));
+    uint32_t magic;
+    uint16_t insn;
     cs->exception_index = excp;
+    if (excp == EXCP_CSKY_BKPT || excp == EXCP_DEBUG) {
+        if (semihosting_enabled()) {
+            insn = cpu_lduw_code(env, env->pc);
+            if (insn == 0) {
+                magic = cpu_lduw_code(env, env->pc + 2);
+                if (magic == 0x4d49) {
+                    magic = cpu_lduw_code(env, env->pc + 4);
+                    if (magic == 0x5345) {
+                        cs->exception_index = EXCP_CSKY_SEMIHOST;
+                    }
+                }
+            }
+        }
+    }
     cpu_loop_exit(cs);
 }
 

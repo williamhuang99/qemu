@@ -29,7 +29,6 @@
 
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
-#include "exec/semihost.h"
 
 /*******************************/
 #define sp 14
@@ -881,13 +880,8 @@ static void gen_branch16(DisasContext *ctx, uint32_t op, int offset)
     case 0x0:
         if (offset == 0) {
             /*bkpt16*/
-            if (is_gdbserver_start == TRUE) {
-                /* semihost-config */
-                if (semihosting_enabled()) {
-                    generate_exception(ctx, EXCP_CSKY_SEMIHOST);
-                } else {
-                    generate_exception(ctx, EXCP_DEBUG);
-                }
+            if (is_gdbserver_start) {
+                generate_exception(ctx, EXCP_DEBUG);
                 ctx->is_jmp = DISAS_JUMP;
             } else {
                 generate_exception(ctx, EXCP_CSKY_BKPT);
