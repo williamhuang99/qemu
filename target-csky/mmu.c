@@ -64,8 +64,7 @@ void helper_tlbinv_idx(CPUCSKYState *env)
     int j;
 
     ptlb = &env->tlb_context->tlb[env->mmu.mir & 0x7f];
-    ptlb->V0 = 0;
-    ptlb->V1 = 0;
+
     for (j = ptlb->VPN;
          j <= (ptlb->VPN | env->mmu.mpr | 0x1000); j += 0x1000) {
         tlb_flush_page(cs, j);
@@ -99,8 +98,8 @@ void helper_tlbinv(CPUCSKYState *env)
                                                              j += 0x1000) {
                 tlb_flush_page(cs, j);
             }
+            memset(ptlb, 0, sizeof(struct csky_tlb_t));
         }
-        memset(ptlb, 0, sizeof(struct csky_tlb_t));
         ptlb++;
     }
 }
@@ -196,6 +195,7 @@ void csky_tlbp(CPUCSKYState *env)
     uint32_t index;
 
     /* index = robin,VPN[18:13]*/
+
     index = (env->mmu.meh >> (get_page_bits(env) + 1)) & 0x3f;
     ptlb =  &env->tlb_context->tlb[index];
 
@@ -439,6 +439,7 @@ do_map:
 hard_refill:
     if (((env->mmu.mpr >> 13) & 0xfff) == 0x0) {
         uint32_t tlb_phy_addr_0, tlb_phy_addr_1;
+        int j;
         /* Get current pgd table base */
         tlb_phy_addr_0 = env->mmu.mpar & (~0xfff);
 
@@ -465,6 +466,12 @@ hard_refill:
             env->tlb_context->round_robin[index] = 1;
         }
         ptlb = &env->tlb_context->tlb[index];
+
+        /* csky_tlb has two 2 pfn, but tlb_set_page only set 1 softmmu page,
+         * so flush both 2 softmmu pages before refill it. */
+        for (j = ptlb->VPN; j <= (ptlb->VPN | env->mmu.mpr | 0x1000); j += 0x1000) {
+            tlb_flush_page(cs, j);
+        }
 
         ptlb->VPN   = address & ~0x1fff;
         ptlb->ASID  = env->mmu.meh & 0xff;
