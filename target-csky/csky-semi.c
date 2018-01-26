@@ -417,7 +417,7 @@ target_ulong csky_do_semihosting(CPUCSKYState *env)
             qemu_timeval tv;
             struct gdb_timeval *p;
             ret = qemu_gettimeofday(&tv);
-            if (ret != 0) {
+            if (ret == 0) {
                 if (!(p = lock_user(VERIFY_WRITE,
                                     arg0, sizeof(struct gdb_timeval), 0))) {
                     ret = -1;
