@@ -442,39 +442,19 @@ void VFP_HELPER(cmp_ne, d)(float64 a, float64 b, CPUCSKYState *env)
 
 void VFP_HELPER(cmp_isNAN, s)(float32 a, float32 b, CPUCSKYState *env)
 {
-    switch (float32_compare(a, b, &env->vfp.fp_status)) {
-    case 0:
-        env->psr_c = 0;
-        break;
-    case -1:
-        env->psr_c = 0;
-        break;
-    case 1:
-        env->psr_c = 0;
-        break;
-    case 2:
-    default:
+    if (float32_is_any_nan(a) || float32_is_any_nan(b)) {
         env->psr_c = 1;
-        break;
+    } else {
+        env->psr_c = 0;
     }
 }
 
 void VFP_HELPER(cmp_isNAN, d)(float64 a,  float64 b, CPUCSKYState *env)
 {
-    switch (float64_compare(a, b, &env->vfp.fp_status)) {
-    case 0:
-        env->psr_c = 0;
-        break;
-    case -1:
-        env->psr_c = 0;
-        break;
-    case 1:
-        env->psr_c = 0;
-        break;
-    case 2:
-    default:
+    if (float64_is_any_nan(a) || float64_is_any_nan(b)) {
         env->psr_c = 1;
-        break;
+    } else {
+        env->psr_c = 0;
     }
 }
 
