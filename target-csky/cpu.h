@@ -64,6 +64,7 @@
 #define EXCP_CSKY_SEMIHOST          28
 #define EXCP_CSKY_FLOAT             30
 #define EXCP_CSKY_CPU_END           31
+#define DENORMALIZE             ((uint64_t)0x1 << 37)
 
 #define CPU_INTERRUPT_FIQ   CPU_INTERRUPT_TGT_EXT_1
 

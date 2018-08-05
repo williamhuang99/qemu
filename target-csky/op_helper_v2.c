@@ -115,11 +115,16 @@ uint32_t helper_ff0(uint32_t a)
 
 void HELPER(vfp_update_fcr)(CPUCSKYState *env)
 {
-    if ((env->vfp.fcr >> 27) & 0x1) {
-        env->vfp.fp_status.flush_inputs_to_zero = 0;
-    } else {
-        env->vfp.fp_status.flush_inputs_to_zero = 1;
+    if (!(env->features & DENORMALIZE)) {
+        if ((env->vfp.fcr >> 27) & 0x1) {
+            env->vfp.fp_status.flush_to_zero = 0;
+            env->vfp.fp_status.flush_inputs_to_zero = 0;
+        } else {
+            env->vfp.fp_status.flush_to_zero = 1;
+            env->vfp.fp_status.flush_inputs_to_zero = 1;
+        }
     }
+
     switch ((env->vfp.fcr >> 24) & 0x3) {
     case 0:
         env->vfp.fp_status.float_rounding_mode = float_round_nearest_even;

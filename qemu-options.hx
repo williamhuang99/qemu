@@ -108,9 +108,10 @@ DEF("cpu-prop", HAS_ARG, QEMU_OPTION_cpu_prop,
     "                mmu_default= default is off\n"
     "                tb_trace= default is off\n"
     "                unaligned_access= default is off\n"
+    "                denormalize= default is off\n"
     , QEMU_ARCH_CSKY)
 STEXI
-@item -cpu-prop vdsp=@var{vdsp}[,pctrace=@var{pctrace}][,elrw=on|off][,mem_prot=mmu|mgu|no][,mmu_default=on|off][,tb_trace=on|off][,unaligned_access=on|off]
+@item -cpu-prop vdsp=@var{vdsp}[,pctrace=@var{pctrace}][,elrw=on|off][,mem_prot=mmu|mgu|no][,mmu_default=on|off][,tb_trace=on|off][,unaligned_access=on|off][,denormalize=on|off]
 @findex -cpu-prop
 
 Choose extend CPU properities. Valid options are:
@@ -130,6 +131,8 @@ This option defines if need open MMU before elf load.
 This option defines if trace beginning of all TranslationBlock's PC. To log it, type "-d tb_trace".
 @item unaligned_access=on|off
 This option defines if cpu need support unaligned data access.
++@item denormalize=on|off
++This option defines if fpu instructions need to excute in denormalized mode.
 @end table
 ETEXI
 

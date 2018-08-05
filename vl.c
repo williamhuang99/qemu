@@ -332,6 +332,10 @@ static QemuOptsList qemu_cpu_prop_opts = {
             .name = "unaligned_access",
             .type = QEMU_OPT_BOOL,
             .help = "cpu support unaligned data access",
+        },{
+            .name = "denormalize",
+            .type = QEMU_OPT_BOOL,
+            .help = "fpu execute in denormalized mode",
         },
         { /* end of list */ }
     },

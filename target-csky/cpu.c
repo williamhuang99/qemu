@@ -121,6 +121,13 @@ static void csky_cpu_handle_opts(CPUCSKYState *env)
         if (b) {
             csky_set_feature(env, UNALIGNED_ACCESS);
         }
+
+        b = qemu_opt_get_bool(opts, "denormalize", false);
+        if (b) {
+            csky_set_feature(env, DENORMALIZE);
+            env->vfp.fp_status.flush_to_zero = 0;
+            env->vfp.fp_status.flush_inputs_to_zero = 0;
+        }
     }
 #endif
 }
@@ -185,7 +192,14 @@ static void csky_cpu_reset(CPUState *s)
     csky_nommu_init(env);
 #endif
 
-    env->vfp.fp_status.flush_inputs_to_zero = 1;
+    if (csky_has_feature(env, DENORMALIZE)) {
+        env->vfp.fp_status.flush_to_zero = 0;
+        env->vfp.fp_status.flush_inputs_to_zero = 0;
+    } else {
+        env->vfp.fp_status.flush_to_zero = 1;
+        env->vfp.fp_status.flush_inputs_to_zero = 1;
+    }
+
     s->exception_index = -1;
     tlb_flush(s, 1);
 

@@ -3782,6 +3782,7 @@ static void handle_arg_stack_size(const char *arg)
 
 static int jcount_start;
 static int jcount_end;
+static int denormalize;
 static void handle_jcount_start(const char *arg)
 {
     jcount_start = strtoul(arg, NULL, 16);
@@ -3792,6 +3793,10 @@ static void handle_jcount_end(const char *arg)
     jcount_end = strtoul(arg, NULL, 16);
 }
 
+static void handle_denormalize(const char *arg)
+{
+    denormalize = 1;
+}
 static void handle_arg_ld_prefix(const char *arg)
 {
     interp_prefix = strdup(arg);
@@ -3963,6 +3968,8 @@ static const struct qemu_argument arg_table[] = {
      "addr",       "set the start addr for jcount"},
     {"jcount_end", "QEMU_JCOUNT_END",     true, handle_jcount_end,
      "addr",       "set the end addr for jcount"},
+    {"denormalize", "QEMU_DENORMALIZE", false, handle_denormalize,
+     "",           "fpu execute in denormalized mode"},
     {"seed",       "QEMU_RAND_SEED",   true,  handle_arg_randseed,
      "",           "Seed for pseudo-random number generator"},
     {"trace",      "QEMU_TRACE",       true,  handle_arg_trace,
@@ -4258,6 +4265,13 @@ int main(int argc, char **argv, char **envp)
         env->jcount_start = 0;
         env->jcount_end = 0;
     }
+
+    if (denormalize == 1) {
+        env->features |= DENORMALIZE;
+        env->vfp.fp_status.flush_to_zero = 0;
+        env->vfp.fp_status.flush_inputs_to_zero = 0;
+    }
+
 #endif
     if (getenv("QEMU_RAND_SEED")) {
         handle_arg_randseed(getenv("QEMU_RAND_SEED"));
