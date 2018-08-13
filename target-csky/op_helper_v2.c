@@ -408,7 +408,7 @@ void VFP_HELPER(cmp_ls, d)(float64 a, float64 b, CPUCSKYState *env)
 
 void VFP_HELPER(cmp_ne, s)(float32 a, float32 b, CPUCSKYState *env)
 {
-    switch (float32_compare(a, b, &env->vfp.fp_status)) {
+    switch (float32_compare_quiet(a, b, &env->vfp.fp_status)) {
     case 0:
         env->psr_c = 0;
         break;
@@ -427,7 +427,7 @@ void VFP_HELPER(cmp_ne, s)(float32 a, float32 b, CPUCSKYState *env)
 
 void VFP_HELPER(cmp_ne, d)(float64 a, float64 b, CPUCSKYState *env)
 {
-    switch (float64_compare(a, b, &env->vfp.fp_status)) {
+    switch (float64_compare_quiet(a, b, &env->vfp.fp_status)) {
     case 0:
         env->psr_c = 0;
         break;
