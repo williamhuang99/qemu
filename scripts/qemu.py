@@ -15,12 +15,26 @@
 import errno
 import logging
 import os
-import sys
 import subprocess
 import qmp.qmp
+import re
+import shutil
+import socket
+import tempfile
 
 
 LOG = logging.getLogger(__name__)
+
+
+#: Maps machine types to the preferred console device types
+CONSOLE_DEV_TYPES = {
+    r'^clipper$': 'isa-serial',
+    r'^malta': 'isa-serial',
+    r'^(pc.*|q35.*|isapc)$': 'isa-serial',
+    r'^(40p|powernv|prep)$': 'isa-serial',
+    r'^pseries.*': 'spapr-vty',
+    r'^s390-ccw-virtio.*': 'sclpconsole',
+    }
 
 
 class QEMUMachineError(Exception):
@@ -28,6 +42,15 @@ class QEMUMachineError(Exception):
     Exception called when an error in QEMUMachine happens.
     """
 
+
+class QEMUMachineAddDeviceError(QEMUMachineError):
+    """
+    Exception raised when a request to add a device can not be fulfilled
+
+    The failures are caused by limitations, lack of information or conflicting
+    requests on the QEMUMachine methods.  This exception does not represent
+    failures reported by the QEMU binary itself.
+    """
 
 class MonitorResponseError(qmp.qmp.QMPError):
     '''
@@ -73,10 +96,11 @@ class QEMUMachine(object):
             wrapper = []
         if name is None:
             name = "qemu-%d" % os.getpid()
-        if monitor_address is None:
-            monitor_address = os.path.join(test_dir, name + "-monitor.sock")
+        self._name = name
         self._monitor_address = monitor_address
-        self._qemu_log_path = os.path.join(test_dir, name + ".log")
+        self._vm_monitor = None
+        self._qemu_log_path = None
+        self._qemu_log_file = None
         self._popen = None
         self._binary = binary
         self._args = list(args)     # Force copy args in case we modify them
@@ -86,6 +110,13 @@ class QEMUMachine(object):
         self._socket_scm_helper = socket_scm_helper
         self._qmp = None
         self._qemu_full_args = None
+        self._test_dir = test_dir
+        self._temp_dir = None
+        self._launched = False
+        self._machine = None
+        self._console_device_type = None
+        self._console_address = None
+        self._console_socket = None
 
         # just in case logging wasn't configured by the main script:
         logging.basicConfig()
@@ -146,12 +177,12 @@ class QEMUMachine(object):
             raise
 
     def is_running(self):
-        return self._popen is not None and self._popen.returncode is None
+        return self._popen is not None and self._popen.poll() is None
 
     def exitcode(self):
         if self._popen is None:
             return None
-        return self._popen.returncode
+        return self._popen.poll()
 
     def get_pid(self):
         if not self.is_running():
@@ -159,8 +190,9 @@ class QEMUMachine(object):
         return self._popen.pid
 
     def _load_io_log(self):
-        with open(self._qemu_log_path, "r") as iolog:
-            self._iolog = iolog.read()
+        if self._qemu_log_path is not None:
+            with open(self._qemu_log_path, "r") as iolog:
+                self._iolog = iolog.read()
 
     def _base_args(self):
         if isinstance(self._monitor_address, tuple):
@@ -168,45 +200,68 @@ class QEMUMachine(object):
                 self._monitor_address[0],
                 self._monitor_address[1])
         else:
-            moncdev = 'socket,id=mon,path=%s' % self._monitor_address
-        return ['-chardev', moncdev,
+            moncdev = 'socket,id=mon,path=%s' % self._vm_monitor
+        args = ['-chardev', moncdev,
                 '-mon', 'chardev=mon,mode=control',
                 '-display', 'none', '-vga', 'none']
+        if self._machine is not None:
+            args.extend(['-machine', self._machine])
+        if self._console_device_type is not None:
+            self._console_address = os.path.join(self._temp_dir,
+                                                 self._name + "-console.sock")
+            chardev = ('socket,id=console,path=%s,server,nowait' %
+                       self._console_address)
+            device = '%s,chardev=console' % self._console_device_type
+            args.extend(['-chardev', chardev, '-device', device])
+        return args
 
     def _pre_launch(self):
-        self._qmp = qmp.qmp.QEMUMonitorProtocol(self._monitor_address,
+        self._temp_dir = tempfile.mkdtemp(dir=self._test_dir)
+        if self._monitor_address is not None:
+            self._vm_monitor = self._monitor_address
+        else:
+            self._vm_monitor = os.path.join(self._temp_dir,
+                                            self._name + "-monitor.sock")
+        self._qemu_log_path = os.path.join(self._temp_dir, self._name + ".log")
+        self._qemu_log_file = open(self._qemu_log_path, 'wb')
+
+        self._qmp = qmp.qmp.QEMUMonitorProtocol(self._vm_monitor,
                                                 server=True)
 
     def _post_launch(self):
         self._qmp.accept()
 
     def _post_shutdown(self):
-        if not isinstance(self._monitor_address, tuple):
-            self._remove_if_exists(self._monitor_address)
-        self._remove_if_exists(self._qemu_log_path)
+        if self._qemu_log_file is not None:
+            self._qemu_log_file.close()
+            self._qemu_log_file = None
+
+        self._qemu_log_path = None
+
+        if self._console_socket is not None:
+            self._console_socket.close()
+            self._console_socket = None
+
+        if self._temp_dir is not None:
+            shutil.rmtree(self._temp_dir)
+            self._temp_dir = None
 
     def launch(self):
-        '''Launch the VM and establish a QMP connection'''
+        """
+        Launch the VM and make sure we cleanup and expose the
+        command line/output in case of exception
+        """
+
+        if self._launched:
+            raise QEMUMachineError('VM already launched')
+
         self._iolog = None
         self._qemu_full_args = None
-        devnull = open(os.path.devnull, 'rb')
-        qemulog = open(self._qemu_log_path, 'wb')
         try:
-            self._pre_launch()
-            self._qemu_full_args = (self._wrapper + [self._binary] +
-                                    self._base_args() + self._args)
-            self._popen = subprocess.Popen(self._qemu_full_args,
-                                           stdin=devnull,
-                                           stdout=qemulog,
-                                           stderr=subprocess.STDOUT,
-                                           shell=False)
-            self._post_launch()
+            self._launch()
+            self._launched = True
         except:
-            if self.is_running():
-                self._popen.kill()
-                self._popen.wait()
-            self._load_io_log()
-            self._post_shutdown()
+            self.shutdown()
 
             LOG.debug('Error launching VM')
             if self._qemu_full_args:
@@ -214,6 +269,19 @@ class QEMUMachine(object):
             if self._iolog:
                 LOG.debug('Output: %r', self._iolog)
             raise
+
+    def _launch(self):
+        '''Launch the VM and establish a QMP connection'''
+        devnull = open(os.path.devnull, 'rb')
+        self._pre_launch()
+        self._qemu_full_args = (self._wrapper + [self._binary] +
+                                self._base_args() + self._args)
+        self._popen = subprocess.Popen(self._qemu_full_args,
+                                       stdin=devnull,
+                                       stdout=self._qemu_log_file,
+                                       stderr=subprocess.STDOUT,
+                                       shell=False)
+        self._post_launch()
 
     def wait(self):
         '''Wait for the VM to power off'''
@@ -232,8 +300,8 @@ class QEMUMachine(object):
                 self._popen.kill()
             self._popen.wait()
 
-            self._load_io_log()
-            self._post_shutdown()
+        self._load_io_log()
+        self._post_shutdown()
 
         exitcode = self.exitcode()
         if exitcode is not None and exitcode < 0:
@@ -244,10 +312,12 @@ class QEMUMachine(object):
                 command = ''
             LOG.warn(msg, exitcode, command)
 
+        self._launched = False
+
     def qmp(self, cmd, conv_keys=True, **args):
         '''Invoke a QMP command and return the response dict'''
         qmp_args = dict()
-        for key, value in args.iteritems():
+        for key, value in args.items():
             if conv_keys:
                 qmp_args[key.replace('_', '-')] = value
             else:
@@ -329,3 +399,64 @@ class QEMUMachine(object):
         of the qemu process.
         '''
         return self._iolog
+
+    def add_args(self, *args):
+        '''
+        Adds to the list of extra arguments to be given to the QEMU binary
+        '''
+        self._args.extend(args)
+
+    def set_machine(self, machine_type):
+        '''
+        Sets the machine type
+
+        If set, the machine type will be added to the base arguments
+        of the resulting QEMU command line.
+        '''
+        self._machine = machine_type
+
+    def set_console(self, device_type=None):
+        '''
+        Sets the device type for a console device
+
+        If set, the console device and a backing character device will
+        be added to the base arguments of the resulting QEMU command
+        line.
+
+        This is a convenience method that will either use the provided
+        device type, of if not given, it will used the device type set
+        on CONSOLE_DEV_TYPES.
+
+        The actual setting of command line arguments will be be done at
+        machine launch time, as it depends on the temporary directory
+        to be created.
+
+        @param device_type: the device type, such as "isa-serial"
+        @raises: QEMUMachineAddDeviceError if the device type is not given
+                 and can not be determined.
+        '''
+        if device_type is None:
+            if self._machine is None:
+                raise QEMUMachineAddDeviceError("Can not add a console device:"
+                                                " QEMU instance without a "
+                                                "defined machine type")
+            for regex, device in CONSOLE_DEV_TYPES.items():
+                if re.match(regex, self._machine):
+                    device_type = device
+                    break
+            if device_type is None:
+                raise QEMUMachineAddDeviceError("Can not add a console device:"
+                                                " no matching console device "
+                                                "type definition")
+        self._console_device_type = device_type
+
+    @property
+    def console_socket(self):
+        """
+        Returns a socket connected to the console
+        """
+        if self._console_socket is None:
+            self._console_socket = socket.socket(socket.AF_UNIX,
+                                                 socket.SOCK_STREAM)
+            self._console_socket.connect(self._console_address)
+        return self._console_socket

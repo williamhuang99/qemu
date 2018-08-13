@@ -12,11 +12,17 @@ Authors:
 This work is licensed under the terms of the GNU GPL, version 2 or later. See
 the COPYING file in the top-level directory.
 """
+from __future__ import print_function
 
 import ctypes
 import struct
 
-UINTPTR_T = gdb.lookup_type("uintptr_t")
+try:
+    UINTPTR_T = gdb.lookup_type("uintptr_t")
+except Exception as inst:
+    raise gdb.GdbError("Symbols must be loaded prior to sourcing dump-guest-memory.\n"
+                       "Symbols may be loaded by 'attach'ing a QEMU process id or by "
+                       "'load'ing a QEMU binary.")
 
 TARGET_PAGE_SIZE = 0x1000
 TARGET_PAGE_MASK = 0xFFFFFFFFFFFFF000
@@ -546,13 +552,16 @@ shape and this command should mostly work."""
         return None
 
     def add_vmcoreinfo(self):
-        if not gdb.parse_and_eval("vmcoreinfo_find()") \
-           or not gdb.parse_and_eval("vmcoreinfo_find()->has_vmcoreinfo"):
+        if gdb.lookup_symbol("vmcoreinfo_realize")[0] is None:
+            return
+        vmci = 'vmcoreinfo_realize::vmcoreinfo_state'
+        if not gdb.parse_and_eval("%s" % vmci) \
+           or not gdb.parse_and_eval("(%s)->has_vmcoreinfo" % vmci):
             return
 
-        fmt = gdb.parse_and_eval("vmcoreinfo_find()->vmcoreinfo.guest_format")
-        addr = gdb.parse_and_eval("vmcoreinfo_find()->vmcoreinfo.paddr")
-        size = gdb.parse_and_eval("vmcoreinfo_find()->vmcoreinfo.size")
+        fmt = gdb.parse_and_eval("(%s)->vmcoreinfo.guest_format" % vmci)
+        addr = gdb.parse_and_eval("(%s)->vmcoreinfo.paddr" % vmci)
+        size = gdb.parse_and_eval("(%s)->vmcoreinfo.size" % vmci)
 
         fmt = le16_to_cpu(fmt)
         addr = le64_to_cpu(addr)
@@ -563,7 +572,7 @@ shape and this command should mostly work."""
 
         vmcoreinfo = self.phys_memory_read(addr, size)
         if vmcoreinfo:
-            self.elf.add_vmcoreinfo_note(vmcoreinfo.tobytes())
+            self.elf.add_vmcoreinfo_note(bytes(vmcoreinfo))
 
     def invoke(self, args, from_tty):
         """Handles command invocation from gdb."""

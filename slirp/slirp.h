@@ -1,7 +1,6 @@
 #ifndef SLIRP_H
 #define SLIRP_H
 
-#include "qemu/host-utils.h"
 #include "slirp_config.h"
 
 #ifdef _WIN32
@@ -194,6 +193,7 @@ struct Slirp {
     char *bootp_filename;
     size_t vdnssearch_len;
     uint8_t *vdnssearch;
+    char *vdomainname;
 
     /* tcp states */
     struct socket tcb;

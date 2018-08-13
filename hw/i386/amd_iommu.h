@@ -23,11 +23,6 @@
 
 #include "hw/hw.h"
 #include "hw/pci/pci.h"
-#include "hw/pci/msi.h"
-#include "hw/sysbus.h"
-#include "sysemu/dma.h"
-#include "hw/i386/pc.h"
-#include "hw/pci/pci_bus.h"
 #include "hw/i386/x86-iommu.h"
 
 /* Capability registers */
@@ -170,8 +165,8 @@
 #define AMDVI_DTE_UPPER_QUAD_RESERVED  0x08f0000000000000
 
 /* AMDVI paging mode */
-#define AMDVI_GATS_MODE                 (6ULL <<  12)
-#define AMDVI_HATS_MODE                 (6ULL <<  10)
+#define AMDVI_GATS_MODE                 (2ULL <<  12)
+#define AMDVI_HATS_MODE                 (2ULL <<  10)
 
 /* IOTLB */
 #define AMDVI_IOTLB_MAX_SIZE 1024

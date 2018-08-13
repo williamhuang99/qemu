@@ -41,9 +41,11 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/units.h"
 #include "hw/hw.h"
 #include "hw/pci/pci.h"
 #include "net/net.h"
+#include "net/eth.h"
 #include "hw/nvram/eeprom93xx.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/dma.h"
@@ -58,8 +60,6 @@
  * become useful the future if the core networking is ever
  * changed to pad short packets itself. */
 #define CONFIG_PAD_RECEIVED_FRAMES
-
-#define KiB 1024
 
 /* Debug EEPRO100 card. */
 #if 0
@@ -132,7 +132,6 @@ typedef struct {
     const char *name;
     const char *desc;
     uint16_t device_id;
-    uint16_t alt_device_id;
     uint8_t revision;
     uint16_t subsystem_vendor_id;
     uint16_t subsystem_id;
@@ -277,7 +276,6 @@ typedef struct {
     /* Quasi static device properties (no need to save them). */
     uint16_t stats_size;
     bool has_extended_tcb_support;
-    bool use_alt_device_id;
 } EEPRO100State;
 
 /* Word indices in EEPROM. */
@@ -325,31 +323,7 @@ static const uint16_t eepro100_mdi_mask[] = {
     0xffff, 0xffff, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 };
 
-#define POLYNOMIAL 0x04c11db6
-
 static E100PCIDeviceInfo *eepro100_get_class(EEPRO100State *s);
-
-/* From FreeBSD (locally modified). */
-static unsigned e100_compute_mcast_idx(const uint8_t *ep)
-{
-    uint32_t crc;
-    int carry, i, j;
-    uint8_t b;
-
-    crc = 0xffffffff;
-    for (i = 0; i < 6; i++) {
-        b = *ep++;
-        for (j = 0; j < 8; j++) {
-            carry = ((crc & 0x80000000L) ? 1 : 0) ^ (b & 0x01);
-            crc <<= 1;
-            b >>= 1;
-            if (carry) {
-                crc = ((crc ^ POLYNOMIAL) | carry);
-            }
-        }
-    }
-    return (crc & BITS(7, 2)) >> 2;
-}
 
 /* Read a 16 bit control/status (CSR) register. */
 static uint16_t e100_read_reg2(EEPRO100State *s, E100RegisterOffset addr)
@@ -756,8 +730,8 @@ static void read_cb(EEPRO100State *s)
 
 static void tx_command(EEPRO100State *s)
 {
-    uint32_t tbd_array = le32_to_cpu(s->tx.tbd_array_addr);
-    uint16_t tcb_bytes = (le16_to_cpu(s->tx.tcb_bytes) & 0x3fff);
+    uint32_t tbd_array = s->tx.tbd_array_addr;
+    uint16_t tcb_bytes = s->tx.tcb_bytes & 0x3fff;
     /* Sends larger than MAX_ETH_FRAME_SIZE are allowed, up to 2600 bytes. */
     uint8_t buf[2600];
     uint16_t size = 0;
@@ -847,7 +821,8 @@ static void set_multicast_list(EEPRO100State *s)
         uint8_t multicast_addr[6];
         pci_dma_read(&s->dev, s->cb_address + 10 + i, multicast_addr, 6);
         TRACE(OTHER, logout("multicast entry %s\n", nic_dump(multicast_addr, 6)));
-        unsigned mcast_idx = e100_compute_mcast_idx(multicast_addr);
+        unsigned mcast_idx = (net_crc32(multicast_addr, ETH_ALEN) &
+                              BITS(7, 2)) >> 2;
         assert(mcast_idx < 64);
         s->mult[mcast_idx >> 3] |= (1 << (mcast_idx & 7));
     }
@@ -1683,7 +1658,7 @@ static ssize_t nic_receive(NetClientState *nc, const uint8_t * buf, size_t size)
         if (s->configuration[21] & BIT(3)) {
           /* Multicast all bit is set, receive all multicast frames. */
         } else {
-          unsigned mcast_idx = e100_compute_mcast_idx(buf);
+          unsigned mcast_idx = (net_crc32(buf, ETH_ALEN) & BITS(7, 2)) >> 2;
           assert(mcast_idx < 64);
           if (s->mult[mcast_idx >> 3] & (1 << (mcast_idx & 7))) {
             /* Multicast frame is allowed in hash table. */
@@ -1703,7 +1678,7 @@ static ssize_t nic_receive(NetClientState *nc, const uint8_t * buf, size_t size)
         rfd_status |= 0x0004;
     } else if (s->configuration[20] & BIT(6)) {
         /* Multiple IA bit set. */
-        unsigned mcast_idx = compute_mcast_idx(buf);
+        unsigned mcast_idx = net_crc32(buf, ETH_ALEN) >> 26;
         assert(mcast_idx < 64);
         if (s->mult[mcast_idx >> 3] & (1 << (mcast_idx & 7))) {
             TRACE(RXTX, logout("%p accepted, multiple IA bit set\n", s));
@@ -1857,14 +1832,6 @@ static void e100_nic_realize(PCIDevice *pci_dev, Error **errp)
 
     TRACE(OTHER, logout("\n"));
 
-    /* By default, the i82559a adapter uses the legacy PCI ID (for the
-     * i82557). This allows the PCI ID to be changed to the alternate
-     * i82559 ID if needed.
-     */
-    if (s->use_alt_device_id && strcmp(info->name, "i82559a") == 0) {
-        pci_config_set_device_id(s->dev.config, info->alt_device_id);
-    }
-
     s->device = info->device;
 
     e100_pci_reset(s, &local_err);
@@ -1984,7 +1951,6 @@ static E100PCIDeviceInfo e100_devices[] = {
         .desc = "Intel i82559A Ethernet",
         .device = i82559A,
         .device_id = PCI_DEVICE_ID_INTEL_82557,
-        .alt_device_id = PCI_DEVICE_ID_INTEL_82559,
         .revision = 0x06,
         .stats_size = 80,
         .has_extended_tcb_support = true,
@@ -2078,8 +2044,6 @@ static E100PCIDeviceInfo *eepro100_get_class(EEPRO100State *s)
 
 static Property e100_properties[] = {
     DEFINE_NIC_PROPERTIES(EEPRO100State, conf),
-    DEFINE_PROP_BOOL("x-use-alt-device-id", EEPRO100State, use_alt_device_id,
-                     true),
     DEFINE_PROP_END_OF_LIST(),
 };
 

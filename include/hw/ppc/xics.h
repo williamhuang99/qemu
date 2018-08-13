@@ -65,10 +65,11 @@ typedef struct XICSFabric XICSFabric;
 struct ICPStateClass {
     DeviceClass parent_class;
 
-    void (*realize)(ICPState *icp, Error **errp);
+    DeviceRealize parent_realize;
+    DeviceReset parent_reset;
+
     void (*pre_save)(ICPState *icp);
     int (*post_load)(ICPState *icp, int version_id);
-    void (*reset)(ICPState *icp);
     void (*synchronize_state)(ICPState *icp);
 };
 
@@ -114,7 +115,9 @@ struct PnvICPState {
 struct ICSStateClass {
     DeviceClass parent_class;
 
-    void (*realize)(ICSState *s, Error **errp);
+    DeviceRealize parent_realize;
+    DeviceReset parent_reset;
+
     void (*pre_save)(ICSState *s);
     int (*post_load)(ICSState *s, int version_id);
     void (*reject)(ICSState *s, uint32_t irq);
@@ -181,13 +184,8 @@ typedef struct XICSFabricClass {
 
 #define XICS_IRQS_SPAPR               1024
 
-int spapr_ics_alloc(ICSState *ics, int irq_hint, bool lsi, Error **errp);
-int spapr_ics_alloc_block(ICSState *ics, int num, bool lsi, bool align,
-                           Error **errp);
-void spapr_ics_free(ICSState *ics, int irq, int num);
 void spapr_dt_xics(int nr_servers, void *fdt, uint32_t phandle);
 
-qemu_irq xics_get_qirq(XICSFabric *xi, int irq);
 ICPState *xics_icp_get(XICSFabric *xi, int server);
 
 /* Internal XICS interfaces */
@@ -211,5 +209,8 @@ typedef struct sPAPRMachineState sPAPRMachineState;
 
 int xics_kvm_init(sPAPRMachineState *spapr, Error **errp);
 void xics_spapr_init(sPAPRMachineState *spapr);
+
+Object *icp_create(Object *cpu, const char *type, XICSFabric *xi,
+                   Error **errp);
 
 #endif /* XICS_H */

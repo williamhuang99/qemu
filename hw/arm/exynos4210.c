@@ -156,12 +156,8 @@ void exynos4210_write_secondary(ARMCPU *cpu,
 
 static uint64_t exynos4210_calc_affinity(int cpu)
 {
-    uint64_t mp_affinity;
-
     /* Exynos4210 has 0x9 as cluster ID */
-    mp_affinity = (0x9 << ARM_AFF1_SHIFT) | cpu;
-
-    return mp_affinity;
+    return (0x9 << ARM_AFF1_SHIFT) | cpu;
 }
 
 Exynos4210State *exynos4210_init(MemoryRegion *system_mem)
@@ -377,8 +373,20 @@ Exynos4210State *exynos4210_init(MemoryRegion *system_mem)
         BlockBackend *blk;
         DriveInfo *di;
 
+        /* Compatible with:
+         * - SD Host Controller Specification Version 2.0
+         * - SDIO Specification Version 2.0
+         * - MMC Specification Version 4.3
+         * - SDMA
+         * - ADMA2
+         *
+         * As this part of the Exynos4210 is not publically available,
+         * we used the "HS-MMC Controller S3C2416X RISC Microprocessor"
+         * public datasheet which is very similar (implementing
+         * MMC Specification Version 4.0 being the only difference noted)
+         */
         dev = qdev_create(NULL, TYPE_SYSBUS_SDHCI);
-        qdev_prop_set_uint32(dev, "capareg", EXYNOS4210_SDHCI_CAPABILITIES);
+        qdev_prop_set_uint64(dev, "capareg", EXYNOS4210_SDHCI_CAPABILITIES);
         qdev_init_nofail(dev);
 
         busdev = SYS_BUS_DEVICE(dev);

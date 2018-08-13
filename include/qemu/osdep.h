@@ -33,6 +33,21 @@
 #else
 #include "exec/poison.h"
 #endif
+#ifdef __COVERITY__
+/* Coverity does not like the new _Float* types that are used by
+ * recent glibc, and croaks on every single file that includes
+ * stdlib.h.  These typedefs are enough to please it.
+ *
+ * Note that these fix parse errors so they cannot be placed in
+ * scripts/coverity-model.c.
+ */
+typedef float _Float32;
+typedef double _Float32x;
+typedef double _Float64;
+typedef __float80 _Float64x;
+typedef __float128 _Float128;
+#endif
+
 #include "qemu/compiler.h"
 
 /* Older versions of C++ don't get definitions of various macros from
@@ -108,6 +123,16 @@ extern int daemon(int, int);
 #include "qemu/typedefs.h"
 
 /*
+ * According to waitpid man page:
+ * WCOREDUMP
+ *  This  macro  is  not  specified  in POSIX.1-2001 and is not
+ *  available on some UNIX implementations (e.g., AIX, SunOS).
+ *  Therefore, enclose its use inside #ifdef WCOREDUMP ... #endif.
+ */
+#ifndef WCOREDUMP
+#define WCOREDUMP(status) 0
+#endif
+/*
  * We have a lot of unaudited code that may fail in strange ways, or
  * even be a security risk during migration, if you disable assertions
  * at compile-time.  You may comment out these safety checks if you
@@ -147,8 +172,35 @@ extern int daemon(int, int);
 #if !defined(ESHUTDOWN)
 #define ESHUTDOWN 4099
 #endif
+
+/* time_t may be either 32 or 64 bits depending on the host OS, and
+ * can be either signed or unsigned, so we can't just hardcode a
+ * specific maximum value. This is not a C preprocessor constant,
+ * so you can't use TIME_MAX in an #ifdef, but for our purposes
+ * this isn't a problem.
+ */
+
+/* The macros TYPE_SIGNED, TYPE_WIDTH, and TYPE_MAXIMUM are from
+ * Gnulib, and are under the LGPL v2.1 or (at your option) any
+ * later version.
+ */
+
+/* True if the real type T is signed.  */
+#define TYPE_SIGNED(t) (!((t)0 < (t)-1))
+
+/* The width in bits of the integer type or expression T.
+ * Padding bits are not supported.
+ */
+#define TYPE_WIDTH(t) (sizeof(t) * CHAR_BIT)
+
+/* The maximum and minimum values for the integer type T.  */
+#define TYPE_MAXIMUM(t)                                                \
+  ((t) (!TYPE_SIGNED(t)                                                \
+        ? (t)-1                                                        \
+        : ((((t)1 << (TYPE_WIDTH(t) - 2)) - 1) * 2 + 1)))
+
 #ifndef TIME_MAX
-#define TIME_MAX LONG_MAX
+#define TIME_MAX TYPE_MAXIMUM(time_t)
 #endif
 
 /* HOST_LONG_BITS is the size of a native pointer in bits. */
@@ -228,7 +280,7 @@ extern int daemon(int, int);
 int qemu_daemon(int nochdir, int noclose);
 void *qemu_try_memalign(size_t alignment, size_t size);
 void *qemu_memalign(size_t alignment, size_t size);
-void *qemu_anon_ram_alloc(size_t size, uint64_t *align);
+void *qemu_anon_ram_alloc(size_t size, uint64_t *align, bool shared);
 void qemu_vfree(void *ptr);
 void qemu_anon_ram_free(void *ptr, size_t size);
 
@@ -330,7 +382,8 @@ void qemu_anon_ram_free(void *ptr, size_t size);
 #endif
 
 #if defined(__linux__) && \
-    (defined(__x86_64__) || defined(__arm__) || defined(__aarch64__))
+    (defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) \
+     || defined(__powerpc64__))
    /* Use 2 MiB alignment so transparent hugepages can be used by KVM.
       Valgrind does not support alignments larger than 1 MiB,
       therefore we need special code which handles running on Valgrind. */
@@ -338,6 +391,9 @@ void qemu_anon_ram_free(void *ptr, size_t size);
 #elif defined(__linux__) && defined(__s390x__)
    /* Use 1 MiB (segment size) alignment so gmap can be used by KVM. */
 #  define QEMU_VMALLOC_ALIGN (256 * 4096)
+#elif defined(__linux__) && defined(__sparc__)
+#include <sys/shm.h>
+#  define QEMU_VMALLOC_ALIGN MAX(getpagesize(), SHMLBA)
 #else
 #  define QEMU_VMALLOC_ALIGN getpagesize()
 #endif

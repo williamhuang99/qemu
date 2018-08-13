@@ -113,7 +113,7 @@ typedef struct DisasContext {
     int rex_x, rex_b;
 #endif
     int vex_l;  /* vex vector length */
-    int vex_v;  /* vex vvvv register, without 1's compliment.  */
+    int vex_v;  /* vex vvvv register, without 1's complement.  */
     int ss32;   /* 32 bit stack segment */
     CCOp cc_op;  /* current CC operation */
     bool cc_op_dirty;
@@ -689,7 +689,7 @@ static void gen_compute_eflags(DisasContext *s)
         return;
     }
 
-    TCGV_UNUSED(zero);
+    zero = NULL;
     dst = cpu_cc_dst;
     src1 = cpu_cc_src;
     src2 = cpu_cc_src2;
@@ -2050,9 +2050,8 @@ static AddressParts gen_lea_modrm_0(CPUX86State *env, DisasContext *s,
 /* Compute the address, with a minimum number of TCG ops.  */
 static TCGv gen_lea_modrm_1(AddressParts a)
 {
-    TCGv ea;
+    TCGv ea = NULL;
 
-    TCGV_UNUSED(ea);
     if (a.index >= 0) {
         if (a.scale == 0) {
             ea = cpu_regs[a.index];
@@ -2067,7 +2066,7 @@ static TCGv gen_lea_modrm_1(AddressParts a)
     } else if (a.base >= 0) {
         ea = cpu_regs[a.base];
     }
-    if (TCGV_IS_UNUSED(ea)) {
+    if (!ea) {
         tcg_gen_movi_tl(cpu_A0, a.disp);
         ea = cpu_A0;
     } else if (a.disp != 0) {
@@ -2194,7 +2193,7 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
         /* jump to same page: we can use a direct jump */
         tcg_gen_goto_tb(tb_num);
         gen_jmp_im(eip);
-        tcg_gen_exit_tb((uintptr_t)s->base.tb + tb_num);
+        tcg_gen_exit_tb(s->base.tb, tb_num);
         s->base.is_jmp = DISAS_NORETURN;
     } else {
         /* jump to another page */
@@ -2573,13 +2572,13 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
         gen_helper_debug(cpu_env);
     } else if (recheck_tf) {
         gen_helper_rechecking_single_step(cpu_env);
-        tcg_gen_exit_tb(0);
+        tcg_gen_exit_tb(NULL, 0);
     } else if (s->tf) {
         gen_helper_single_step(cpu_env);
     } else if (jr) {
         tcg_gen_lookup_and_goto_ptr();
     } else {
-        tcg_gen_exit_tb(0);
+        tcg_gen_exit_tb(NULL, 0);
     }
     s->base.is_jmp = DISAS_NORETURN;
 }
@@ -3803,7 +3802,7 @@ static void gen_sse(CPUX86State *env, DisasContext *s, int b,
                 }
                 ot = mo_64_32(s->dflag);
                 gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 0);
-                tcg_gen_andc_tl(cpu_T0, cpu_regs[s->vex_v], cpu_T0);
+                tcg_gen_andc_tl(cpu_T0, cpu_T0, cpu_regs[s->vex_v]);
                 gen_op_mov_reg_v(ot, reg, cpu_T0);
                 gen_op_update1_cc();
                 set_cc_op(s, CC_OP_LOGICB + ot);
@@ -3951,7 +3950,7 @@ static void gen_sse(CPUX86State *env, DisasContext *s, int b,
                     gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 0);
 
                     /* Re-use the carry-out from a previous round.  */
-                    TCGV_UNUSED(carry_in);
+                    carry_in = NULL;
                     carry_out = (b == 0x1f6 ? cpu_cc_dst : cpu_cc_src2);
                     switch (s->cc_op) {
                     case CC_OP_ADCX:
@@ -3979,7 +3978,7 @@ static void gen_sse(CPUX86State *env, DisasContext *s, int b,
                         break;
                     }
                     /* If we can't reuse carry-out, get it out of EFLAGS.  */
-                    if (TCGV_IS_UNUSED(carry_in)) {
+                    if (!carry_in) {
                         if (s->cc_op != CC_OP_ADCX && s->cc_op != CC_OP_ADOX) {
                             gen_compute_eflags(s);
                         }
@@ -4060,34 +4059,26 @@ static void gen_sse(CPUX86State *env, DisasContext *s, int b,
                 ot = mo_64_32(s->dflag);
                 gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 0);
 
+                tcg_gen_mov_tl(cpu_cc_src, cpu_T0);
                 switch (reg & 7) {
                 case 1: /* blsr By,Ey */
+                    tcg_gen_subi_tl(cpu_T1, cpu_T0, 1);
+                    tcg_gen_and_tl(cpu_T0, cpu_T0, cpu_T1);
+                    break;
+                case 2: /* blsmsk By,Ey */
+                    tcg_gen_subi_tl(cpu_T1, cpu_T0, 1);
+                    tcg_gen_xor_tl(cpu_T0, cpu_T0, cpu_T1);
+                    break;
+                case 3: /* blsi By, Ey */
                     tcg_gen_neg_tl(cpu_T1, cpu_T0);
                     tcg_gen_and_tl(cpu_T0, cpu_T0, cpu_T1);
-                    gen_op_mov_reg_v(ot, s->vex_v, cpu_T0);
-                    gen_op_update2_cc();
-                    set_cc_op(s, CC_OP_BMILGB + ot);
                     break;
-
-                case 2: /* blsmsk By,Ey */
-                    tcg_gen_mov_tl(cpu_cc_src, cpu_T0);
-                    tcg_gen_subi_tl(cpu_T0, cpu_T0, 1);
-                    tcg_gen_xor_tl(cpu_T0, cpu_T0, cpu_cc_src);
-                    tcg_gen_mov_tl(cpu_cc_dst, cpu_T0);
-                    set_cc_op(s, CC_OP_BMILGB + ot);
-                    break;
-
-                case 3: /* blsi By, Ey */
-                    tcg_gen_mov_tl(cpu_cc_src, cpu_T0);
-                    tcg_gen_subi_tl(cpu_T0, cpu_T0, 1);
-                    tcg_gen_and_tl(cpu_T0, cpu_T0, cpu_cc_src);
-                    tcg_gen_mov_tl(cpu_cc_dst, cpu_T0);
-                    set_cc_op(s, CC_OP_BMILGB + ot);
-                    break;
-
                 default:
                     goto unknown_op;
                 }
+                tcg_gen_mov_tl(cpu_cc_dst, cpu_T0);
+                gen_op_mov_reg_v(ot, s->vex_v, cpu_T0);
+                set_cc_op(s, CC_OP_BMILGB + ot);
                 break;
 
             default:
@@ -4467,10 +4458,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
     target_ulong pc_start = s->base.pc_next;
 
     s->pc_start = s->pc = pc_start;
-    prefixes = 0;
     s->override = -1;
-    rex_w = -1;
-    rex_r = 0;
 #ifdef TARGET_X86_64
     s->rex_x = 0;
     s->rex_b = 0;
@@ -4483,6 +4471,10 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         gen_exception(s, EXCP0D_GPF, pc_start - s->cs_base);
         return s->pc;
     }
+
+    prefixes = 0;
+    rex_w = -1;
+    rex_r = 0;
 
  next_byte:
     b = x86_ldub_code(env, s);
@@ -4547,9 +4539,9 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             if (!CODE64(s) && (vex2 & 0xc0) != 0xc0) {
                 /* 4.1.4.6: In 32-bit mode, bits [7:6] must be 11b,
                    otherwise the instruction is LES or LDS.  */
+                s->pc--; /* rewind the advance_pc() x86_ldub_code() did */
                 break;
             }
-            s->pc++;
 
             /* 4.1.1-4.1.3: No preceding lock, 66, f2, f3, or rex prefixes. */
             if (prefixes & (PREFIX_REPZ | PREFIX_REPNZ
@@ -4563,9 +4555,11 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
 #endif
             rex_r = (~vex2 >> 4) & 8;
             if (b == 0xc5) {
+                /* 2-byte VEX prefix: RVVVVlpp, implied 0f leading opcode byte */
                 vex3 = vex2;
-                b = x86_ldub_code(env, s);
+                b = x86_ldub_code(env, s) | 0x100;
             } else {
+                /* 3-byte VEX prefix: RXBmmmmm wVVVVlpp */
 #ifdef TARGET_X86_64
                 s->rex_x = (~vex2 >> 3) & 8;
                 s->rex_b = (~vex2 >> 2) & 8;
@@ -7400,7 +7394,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_jmp_im(pc_start - s->cs_base);
             gen_helper_vmrun(cpu_env, tcg_const_i32(s->aflag - 1),
                              tcg_const_i32(s->pc - pc_start));
-            tcg_gen_exit_tb(0);
+            tcg_gen_exit_tb(NULL, 0);
             s->base.is_jmp = DISAS_NORETURN;
             break;
 
@@ -7450,8 +7444,9 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
                 break;
             }
             gen_update_cc_op(s);
-            gen_jmp_im(pc_start - s->cs_base);
             gen_helper_stgi(cpu_env);
+            gen_jmp_im(s->pc - s->cs_base);
+            gen_eob(s);
             break;
 
         case 0xdd: /* CLGI */
@@ -7672,7 +7667,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
                 tcg_gen_mov_tl(a0, cpu_A0);
             } else {
                 gen_op_mov_v_reg(ot, t0, rm);
-                TCGV_UNUSED(a0);
+                a0 = NULL;
             }
             gen_op_mov_v_reg(ot, t1, reg);
             tcg_gen_andi_tl(cpu_tmp0, t0, 3);
@@ -8400,8 +8395,7 @@ void tcg_x86_init(void)
     }
 }
 
-static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
-                                      int max_insns)
+static void i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
     CPUX86State *env = cpu->env_ptr;
@@ -8468,8 +8462,6 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     cpu_ptr0 = tcg_temp_new_ptr();
     cpu_ptr1 = tcg_temp_new_ptr();
     cpu_cc_srcT = tcg_temp_local_new();
-
-    return max_insns;
 }
 
 static void i386_tr_tb_start(DisasContextBase *db, CPUState *cpu)

@@ -98,10 +98,12 @@
 static inline DATA_TYPE glue(io_read, SUFFIX)(CPUArchState *env,
                                               size_t mmu_idx, size_t index,
                                               target_ulong addr,
-                                              uintptr_t retaddr)
+                                              uintptr_t retaddr,
+                                              bool recheck)
 {
     CPUIOTLBEntry *iotlbentry = &env->iotlb[mmu_idx][index];
-    return io_readx(env, iotlbentry, mmu_idx, addr, retaddr, DATA_SIZE);
+    return io_readx(env, iotlbentry, mmu_idx, addr, retaddr, recheck,
+                    DATA_SIZE);
 }
 #endif
 
@@ -121,10 +123,9 @@ WORD_TYPE helper_le_ld_name(CPUArchState *env, target_ulong addr,
     }
 
     /* If the TLB entry is for a different page, reload and try again.  */
-    if ((addr & TARGET_PAGE_MASK)
-         != (tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK))) {
+    if (!tlb_hit(tlb_addr, addr)) {
         if (!VICTIM_TLB_HIT(ADDR_READ, addr)) {
-            tlb_fill(ENV_GET_CPU(env), addr, READ_ACCESS_TYPE,
+            tlb_fill(ENV_GET_CPU(env), addr, DATA_SIZE, READ_ACCESS_TYPE,
                      mmu_idx, retaddr);
         }
         tlb_addr = env->tlb_table[mmu_idx][index].ADDR_READ;
@@ -138,7 +139,8 @@ WORD_TYPE helper_le_ld_name(CPUArchState *env, target_ulong addr,
 
         /* ??? Note that the io helpers always read data in the target
            byte ordering.  We should push the LE/BE request down into io.  */
-        res = glue(io_read, SUFFIX)(env, mmu_idx, index, addr, retaddr);
+        res = glue(io_read, SUFFIX)(env, mmu_idx, index, addr, retaddr,
+                                    tlb_addr & TLB_RECHECK);
         res = TGT_LE(res);
         return res;
     }
@@ -188,10 +190,9 @@ WORD_TYPE helper_be_ld_name(CPUArchState *env, target_ulong addr,
     }
 
     /* If the TLB entry is for a different page, reload and try again.  */
-    if ((addr & TARGET_PAGE_MASK)
-         != (tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK))) {
+    if (!tlb_hit(tlb_addr, addr)) {
         if (!VICTIM_TLB_HIT(ADDR_READ, addr)) {
-            tlb_fill(ENV_GET_CPU(env), addr, READ_ACCESS_TYPE,
+            tlb_fill(ENV_GET_CPU(env), addr, DATA_SIZE, READ_ACCESS_TYPE,
                      mmu_idx, retaddr);
         }
         tlb_addr = env->tlb_table[mmu_idx][index].ADDR_READ;
@@ -205,7 +206,8 @@ WORD_TYPE helper_be_ld_name(CPUArchState *env, target_ulong addr,
 
         /* ??? Note that the io helpers always read data in the target
            byte ordering.  We should push the LE/BE request down into io.  */
-        res = glue(io_read, SUFFIX)(env, mmu_idx, index, addr, retaddr);
+        res = glue(io_read, SUFFIX)(env, mmu_idx, index, addr, retaddr,
+                                    tlb_addr & TLB_RECHECK);
         res = TGT_BE(res);
         return res;
     }
@@ -259,10 +261,12 @@ static inline void glue(io_write, SUFFIX)(CPUArchState *env,
                                           size_t mmu_idx, size_t index,
                                           DATA_TYPE val,
                                           target_ulong addr,
-                                          uintptr_t retaddr)
+                                          uintptr_t retaddr,
+                                          bool recheck)
 {
     CPUIOTLBEntry *iotlbentry = &env->iotlb[mmu_idx][index];
-    return io_writex(env, iotlbentry, mmu_idx, val, addr, retaddr, DATA_SIZE);
+    return io_writex(env, iotlbentry, mmu_idx, val, addr, retaddr,
+                     recheck, DATA_SIZE);
 }
 
 void helper_le_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
@@ -280,10 +284,10 @@ void helper_le_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
     }
 
     /* If the TLB entry is for a different page, reload and try again.  */
-    if ((addr & TARGET_PAGE_MASK)
-        != (tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK))) {
+    if (!tlb_hit(tlb_addr, addr)) {
         if (!VICTIM_TLB_HIT(addr_write, addr)) {
-            tlb_fill(ENV_GET_CPU(env), addr, MMU_DATA_STORE, mmu_idx, retaddr);
+            tlb_fill(ENV_GET_CPU(env), addr, DATA_SIZE, MMU_DATA_STORE,
+                     mmu_idx, retaddr);
         }
         tlb_addr = env->tlb_table[mmu_idx][index].addr_write & ~TLB_INVALID_MASK;
     }
@@ -297,7 +301,8 @@ void helper_le_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
         /* ??? Note that the io helpers always read data in the target
            byte ordering.  We should push the LE/BE request down into io.  */
         val = TGT_LE(val);
-        glue(io_write, SUFFIX)(env, mmu_idx, index, val, addr, retaddr);
+        glue(io_write, SUFFIX)(env, mmu_idx, index, val, addr,
+                               retaddr, tlb_addr & TLB_RECHECK);
         return;
     }
 
@@ -314,9 +319,9 @@ void helper_le_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
         page2 = (addr + DATA_SIZE) & TARGET_PAGE_MASK;
         index2 = (page2 >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
         tlb_addr2 = env->tlb_table[mmu_idx][index2].addr_write;
-        if (page2 != (tlb_addr2 & (TARGET_PAGE_MASK | TLB_INVALID_MASK))
+        if (!tlb_hit_page(tlb_addr2, page2)
             && !VICTIM_TLB_HIT(addr_write, page2)) {
-            tlb_fill(ENV_GET_CPU(env), page2, MMU_DATA_STORE,
+            tlb_fill(ENV_GET_CPU(env), page2, DATA_SIZE, MMU_DATA_STORE,
                      mmu_idx, retaddr);
         }
 
@@ -356,10 +361,10 @@ void helper_be_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
     }
 
     /* If the TLB entry is for a different page, reload and try again.  */
-    if ((addr & TARGET_PAGE_MASK)
-        != (tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK))) {
+    if (!tlb_hit(tlb_addr, addr)) {
         if (!VICTIM_TLB_HIT(addr_write, addr)) {
-            tlb_fill(ENV_GET_CPU(env), addr, MMU_DATA_STORE, mmu_idx, retaddr);
+            tlb_fill(ENV_GET_CPU(env), addr, DATA_SIZE, MMU_DATA_STORE,
+                     mmu_idx, retaddr);
         }
         tlb_addr = env->tlb_table[mmu_idx][index].addr_write & ~TLB_INVALID_MASK;
     }
@@ -373,7 +378,8 @@ void helper_be_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
         /* ??? Note that the io helpers always read data in the target
            byte ordering.  We should push the LE/BE request down into io.  */
         val = TGT_BE(val);
-        glue(io_write, SUFFIX)(env, mmu_idx, index, val, addr, retaddr);
+        glue(io_write, SUFFIX)(env, mmu_idx, index, val, addr, retaddr,
+                               tlb_addr & TLB_RECHECK);
         return;
     }
 
@@ -390,9 +396,9 @@ void helper_be_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
         page2 = (addr + DATA_SIZE) & TARGET_PAGE_MASK;
         index2 = (page2 >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
         tlb_addr2 = env->tlb_table[mmu_idx][index2].addr_write;
-        if (page2 != (tlb_addr2 & (TARGET_PAGE_MASK | TLB_INVALID_MASK))
+        if (!tlb_hit_page(tlb_addr2, page2)
             && !VICTIM_TLB_HIT(addr_write, page2)) {
-            tlb_fill(ENV_GET_CPU(env), page2, MMU_DATA_STORE,
+            tlb_fill(ENV_GET_CPU(env), page2, DATA_SIZE, MMU_DATA_STORE,
                      mmu_idx, retaddr);
         }
 

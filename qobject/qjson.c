@@ -17,7 +17,11 @@
 #include "qapi/qmp/json-parser.h"
 #include "qapi/qmp/json-streamer.h"
 #include "qapi/qmp/qjson.h"
-#include "qapi/qmp/types.h"
+#include "qapi/qmp/qbool.h"
+#include "qapi/qmp/qdict.h"
+#include "qapi/qmp/qlist.h"
+#include "qapi/qmp/qnum.h"
+#include "qapi/qmp/qstring.h"
 #include "qemu/unicode.h"
 
 typedef struct JSONParsingState
@@ -55,10 +59,6 @@ QObject *qobject_from_json(const char *string, Error **errp)
     return qobject_from_jsonv(string, NULL, errp);
 }
 
-/*
- * IMPORTANT: This function aborts on error, thus it must not
- * be used with untrusted arguments.
- */
 QObject *qobject_from_jsonf(const char *string, ...)
 {
     QObject *obj;
@@ -68,7 +68,24 @@ QObject *qobject_from_jsonf(const char *string, ...)
     obj = qobject_from_jsonv(string, &ap, &error_abort);
     va_end(ap);
 
-    assert(obj != NULL);
+    return obj;
+}
+
+/*
+ * Parse @string as JSON object with %-escapes interpolated.
+ * Abort on error.  Do not use with untrusted @string.
+ * Return the resulting QDict.  It is never null.
+ */
+QDict *qdict_from_jsonf_nofail(const char *string, ...)
+{
+    QDict *obj;
+    va_list ap;
+
+    va_start(ap, string);
+    obj = qobject_to(QDict, qobject_from_jsonv(string, &ap, &error_abort));
+    va_end(ap);
+
+    assert(obj);
     return obj;
 }
 
@@ -100,7 +117,7 @@ static void to_json_dict_iter(const char *key, QObject *obj, void *opaque)
 
     qkey = qstring_from_str(key);
     to_json(QOBJECT(qkey), s->str, s->pretty, s->indent);
-    QDECREF(qkey);
+    qobject_unref(qkey);
 
     qstring_append(s->str, ": ");
     to_json(obj, s->str, s->pretty, s->indent);
@@ -133,14 +150,14 @@ static void to_json(const QObject *obj, QString *str, int pretty, int indent)
         qstring_append(str, "null");
         break;
     case QTYPE_QNUM: {
-        QNum *val = qobject_to_qnum(obj);
+        QNum *val = qobject_to(QNum, obj);
         char *buffer = qnum_to_string(val);
         qstring_append(str, buffer);
         g_free(buffer);
         break;
     }
     case QTYPE_QSTRING: {
-        QString *val = qobject_to_qstring(obj);
+        QString *val = qobject_to(QString, obj);
         const char *ptr;
         int cp;
         char buf[16];
@@ -197,7 +214,7 @@ static void to_json(const QObject *obj, QString *str, int pretty, int indent)
     }
     case QTYPE_QDICT: {
         ToJsonIterState s;
-        QDict *val = qobject_to_qdict(obj);
+        QDict *val = qobject_to(QDict, obj);
 
         s.count = 0;
         s.str = str;
@@ -216,7 +233,7 @@ static void to_json(const QObject *obj, QString *str, int pretty, int indent)
     }
     case QTYPE_QLIST: {
         ToJsonIterState s;
-        QList *val = qobject_to_qlist(obj);
+        QList *val = qobject_to(QList, obj);
 
         s.count = 0;
         s.str = str;
@@ -234,7 +251,7 @@ static void to_json(const QObject *obj, QString *str, int pretty, int indent)
         break;
     }
     case QTYPE_QBOOL: {
-        QBool *val = qobject_to_qbool(obj);
+        QBool *val = qobject_to(QBool, obj);
 
         if (qbool_get_bool(val)) {
             qstring_append(str, "true");

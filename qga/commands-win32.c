@@ -14,6 +14,7 @@
 #ifndef _WIN32_WINNT
 #   define _WIN32_WINNT 0x0600
 #endif
+
 #include "qemu/osdep.h"
 #include <wtypes.h>
 #include <powrprof.h>
@@ -31,9 +32,10 @@
 #include <wtsapi32.h>
 #include <wininet.h>
 
-#include "qga/guest-agent-core.h"
-#include "qga/vss-win32.h"
-#include "qga-qmp-commands.h"
+#include "guest-agent-core.h"
+#include "vss-win32.h"
+#include "qga-qapi-commands.h"
+#include "qapi/error.h"
 #include "qapi/qmp/qerror.h"
 #include "qemu/queue.h"
 #include "qemu/host-utils.h"
@@ -316,7 +318,7 @@ GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
     }
     if (!has_count) {
         count = QGA_READ_COUNT_DEFAULT;
-    } else if (count < 0) {
+    } else if (count < 0 || count >= UINT32_MAX) {
         error_setg(errp, "value '%" PRId64
                    "' is invalid for argument count", count);
         return NULL;
@@ -668,6 +670,7 @@ static GuestFilesystemInfo *build_guest_fsinfo(char *guid, Error **errp)
     char fs_name[32];
     char vol_info[MAX_PATH+1];
     size_t len;
+    uint64_t i64FreeBytesToCaller, i64TotalBytes, i64FreeBytes;
     GuestFilesystemInfo *fs = NULL;
 
     GetVolumePathNamesForVolumeName(guid, (LPCH)&mnt, 0, &info_size);
@@ -697,10 +700,21 @@ static GuestFilesystemInfo *build_guest_fsinfo(char *guid, Error **errp)
     fs_name[sizeof(fs_name) - 1] = 0;
     fs = g_malloc(sizeof(*fs));
     fs->name = g_strdup(guid);
+    fs->has_total_bytes = false;
+    fs->has_used_bytes = false;
     if (len == 0) {
         fs->mountpoint = g_strdup("System Reserved");
     } else {
         fs->mountpoint = g_strndup(mnt_point, len);
+        if (GetDiskFreeSpaceEx(fs->mountpoint,
+                               (PULARGE_INTEGER) & i64FreeBytesToCaller,
+                               (PULARGE_INTEGER) & i64TotalBytes,
+                               (PULARGE_INTEGER) & i64FreeBytes)) {
+            fs->used_bytes = i64TotalBytes - i64FreeBytes;
+            fs->total_bytes = i64TotalBytes;
+            fs->has_total_bytes = true;
+            fs->has_used_bytes = true;
+        }
     }
     fs->type = g_strdup(fs_name);
     fs->disk = build_guest_disk_info(guid, errp);
@@ -851,6 +865,19 @@ qmp_guest_fstrim(bool has_minimum, int64_t minimum, Error **errp)
     GuestFilesystemTrimResponse *resp;
     HANDLE handle;
     WCHAR guid[MAX_PATH] = L"";
+    OSVERSIONINFO osvi;
+    BOOL win8_or_later;
+
+    ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+    GetVersionEx(&osvi);
+    win8_or_later = (osvi.dwMajorVersion > 6 ||
+                          ((osvi.dwMajorVersion == 6) &&
+                           (osvi.dwMinorVersion >= 2)));
+    if (!win8_or_later) {
+        error_setg(errp, "fstrim is only supported for Win8+");
+        return NULL;
+    }
 
     handle = FindFirstVolumeW(guid, ARRAYSIZE(guid));
     if (handle == INVALID_HANDLE_VALUE) {
@@ -1169,24 +1196,46 @@ static DWORD get_interface_index(const char *guid)
         return index;
     }
 }
+
+typedef NETIOAPI_API (WINAPI *GetIfEntry2Func)(PMIB_IF_ROW2 Row);
+
 static int guest_get_network_stats(const char *name,
-                       GuestNetworkInterfaceStat *stats)
+                                   GuestNetworkInterfaceStat *stats)
 {
-    DWORD if_index = 0;
-    MIB_IFROW a_mid_ifrow;
-    memset(&a_mid_ifrow, 0, sizeof(a_mid_ifrow));
-    if_index = get_interface_index(name);
-    a_mid_ifrow.dwIndex = if_index;
-    if (NO_ERROR == GetIfEntry(&a_mid_ifrow)) {
-        stats->rx_bytes = a_mid_ifrow.dwInOctets;
-        stats->rx_packets = a_mid_ifrow.dwInUcastPkts;
-        stats->rx_errs = a_mid_ifrow.dwInErrors;
-        stats->rx_dropped = a_mid_ifrow.dwInDiscards;
-        stats->tx_bytes = a_mid_ifrow.dwOutOctets;
-        stats->tx_packets = a_mid_ifrow.dwOutUcastPkts;
-        stats->tx_errs = a_mid_ifrow.dwOutErrors;
-        stats->tx_dropped = a_mid_ifrow.dwOutDiscards;
-        return 0;
+    OSVERSIONINFO os_ver;
+
+    os_ver.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+    GetVersionEx(&os_ver);
+    if (os_ver.dwMajorVersion >= 6) {
+        MIB_IF_ROW2 a_mid_ifrow;
+        GetIfEntry2Func getifentry2_ex;
+        DWORD if_index = 0;
+        HMODULE module = GetModuleHandle("iphlpapi");
+        PVOID func = GetProcAddress(module, "GetIfEntry2");
+
+        if (func == NULL) {
+            return -1;
+        }
+
+        getifentry2_ex = (GetIfEntry2Func)func;
+        if_index = get_interface_index(name);
+        if (if_index == (DWORD)~0) {
+            return -1;
+        }
+
+        memset(&a_mid_ifrow, 0, sizeof(a_mid_ifrow));
+        a_mid_ifrow.InterfaceIndex = if_index;
+        if (NO_ERROR == getifentry2_ex(&a_mid_ifrow)) {
+            stats->rx_bytes = a_mid_ifrow.InOctets;
+            stats->rx_packets = a_mid_ifrow.InUcastPkts;
+            stats->rx_errs = a_mid_ifrow.InErrors;
+            stats->rx_dropped = a_mid_ifrow.InDiscards;
+            stats->tx_bytes = a_mid_ifrow.OutOctets;
+            stats->tx_packets = a_mid_ifrow.OutUcastPkts;
+            stats->tx_errs = a_mid_ifrow.OutErrors;
+            stats->tx_dropped = a_mid_ifrow.OutDiscards;
+            return 0;
+        }
     }
     return -1;
 }
