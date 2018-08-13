@@ -449,6 +449,10 @@ void VFP_HELPER(cmp_isNAN, s)(float32 a, float32 b, CPUCSKYState *env)
 {
     if (float32_is_any_nan(a) || float32_is_any_nan(b)) {
         env->psr_c = 1;
+        if (float32_is_signaling_nan(a, &env->vfp.fp_status)
+            || float32_is_signaling_nan(b, &env->vfp.fp_status)) {
+            float_raise(float_flag_invalid, &env->vfp.fp_status);
+        }
     } else {
         env->psr_c = 0;
     }
@@ -458,6 +462,10 @@ void VFP_HELPER(cmp_isNAN, d)(float64 a,  float64 b, CPUCSKYState *env)
 {
     if (float64_is_any_nan(a) || float64_is_any_nan(b)) {
         env->psr_c = 1;
+        if (float64_is_signaling_nan(a, &env->vfp.fp_status)
+            || float64_is_signaling_nan(b, &env->vfp.fp_status)) {
+            float_raise(float_flag_invalid, &env->vfp.fp_status);
+        }
     } else {
         env->psr_c = 0;
     }
