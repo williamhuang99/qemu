@@ -531,181 +531,244 @@ float64 VFP_HELPER(fmovi, d)(uint32_t imm, uint32_t pos, uint32_t aSign,
 
 float32 VFP_HELPER(tosirn, s)(float32 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float32_is_any_nan(x)) {
         return float32_zero;
     }
-    return vfp_itos(float32_to_int32(x, &env->vfp.fp_status));
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_nearest_even;
+    res = float32_to_int32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(tosirz, s)(float32 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float32_is_any_nan(x)) {
         return float32_zero;
     }
-    return vfp_itos(float32_to_int32_round_to_zero(x, &env->vfp.fp_status));
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_to_zero;
+    res = float32_to_int32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(tosirpi, s)(float32 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float32_is_any_nan(x)) {
         return float32_zero;
     }
-    if (x > 0) {
-        return vfp_itos(float32_to_int32_round_to_zero
-                        (x, &env->vfp.fp_status) + 1);
-    } else {
-        return vfp_itos(float32_to_int32_round_to_zero(x, &env->vfp.fp_status));
-    }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_up;
+    res = float32_to_int32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(tosirni, s)(float32 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float32_is_any_nan(x)) {
         return float32_zero;
     }
-    if (x > 0) {
-        return vfp_itos(float32_to_int32_round_to_zero(x, &env->vfp.fp_status));
-    } else {
-        return vfp_itos(float32_to_int32_round_to_zero
-                        (x, &env->vfp.fp_status) - 1);
-    }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_down;
+    res = float32_to_int32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(tosirn, d)(float64 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float64_is_any_nan(x)) {
         return float32_zero;
     }
-    return vfp_itos(float64_to_int32(x, &env->vfp.fp_status));
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_nearest_even;
+    res = float64_to_int32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(tosirz, d)(float64 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float64_is_any_nan(x)) {
         return float32_zero;
     }
-    return vfp_itos(float64_to_int32_round_to_zero(x, &env->vfp.fp_status));
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_to_zero;
+    res = float64_to_int32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(tosirpi, d)(float64 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float64_is_any_nan(x)) {
         return float32_zero;
     }
-    if (x > 0) {
-        return vfp_itos(float64_to_int32_round_to_zero
-                        (x, &env->vfp.fp_status) + 1);
-    } else {
-        return vfp_itos(float64_to_int32_round_to_zero(x, &env->vfp.fp_status));
-    }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_up;
+    res = float64_to_int32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(tosirni, d)(float64 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float64_is_any_nan(x)) {
         return float32_zero;
     }
-    if (x > 0) {
-        return vfp_itos(float64_to_int32_round_to_zero
-                        (x, &env->vfp.fp_status));
-    } else {
-        return vfp_itos(float64_to_int32_round_to_zero
-                        (x, &env->vfp.fp_status) - 1);
-    }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_down;
+    res = float64_to_int32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 
 float32 VFP_HELPER(touirn, s)(float32 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float32_is_any_nan(x)) {
         return float32_zero;
     }
-    return vfp_itos(float32_to_uint32(x, &env->vfp.fp_status));
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_nearest_even;
+    res = float32_to_uint32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(touirz, s)(float32 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float32_is_any_nan(x)) {
         return float32_zero;
     }
-    return vfp_itos(float32_to_uint32_round_to_zero(x, &env->vfp.fp_status));
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_to_zero;
+    res = float32_to_uint32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(touirpi, s)(float32 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float32_is_any_nan(x)) {
         return float32_zero;
     }
-    if (x > 0) {
-        return vfp_itos(float32_to_uint32_round_to_zero
-                        (x, &env->vfp.fp_status) + 1);
-    } else {
-        return vfp_itos(float32_to_uint32_round_to_zero
-                        (x, &env->vfp.fp_status));
-    }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_up;
+    res = float32_to_uint32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(touirni, s)(float32 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float32_is_any_nan(x)) {
         return float32_zero;
     }
-    if (x > 0) {
-        return vfp_itos(float32_to_uint32_round_to_zero
-                        (x, &env->vfp.fp_status));
-    } else {
-        return vfp_itos(float32_to_uint32_round_to_zero
-                        (x, &env->vfp.fp_status) - 1);
-    }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_down;
+    res = float32_to_uint32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(touirn, d)(float64 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float64_is_any_nan(x)) {
         return float32_zero;
     }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_nearest_even;
+    res = float64_to_uint32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
 
-    return vfp_itos(float64_to_uint32(x, &env->vfp.fp_status));
+    return res;
 }
 
 float32 VFP_HELPER(touirz, d)(float64 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float64_is_any_nan(x)) {
         return float32_zero;
     }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_to_zero;
+    res = float64_to_uint32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
 
-    return vfp_itos(float64_to_uint32_round_to_zero(x, &env->vfp.fp_status));
+    return res;
 }
 
 float32 VFP_HELPER(touirpi, d)(float64 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float64_is_any_nan(x)) {
         return float32_zero;
     }
-    if (x > 0) {
-        return vfp_itos(float64_to_uint32_round_to_zero
-                        (x, &env->vfp.fp_status) + 1);
-    } else {
-        return vfp_itos(float64_to_uint32_round_to_zero
-                        (x, &env->vfp.fp_status));
-    }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_up;
+    res = float64_to_uint32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
 
 float32 VFP_HELPER(touirni, d)(float64 x, CPUCSKYState *env)
 {
+    int mode;
+    float32 res;
     if (float64_is_any_nan(x)) {
         return float32_zero;
     }
-    if (x > 0) {
-        return vfp_itos(float64_to_uint32_round_to_zero
-                        (x, &env->vfp.fp_status));
-    } else {
-        return vfp_itos(float64_to_uint32_round_to_zero
-                        (x, &env->vfp.fp_status) - 1);
-    }
+    mode = env->vfp.fp_status.float_rounding_mode;
+    env->vfp.fp_status.float_rounding_mode = float_round_down;
+    res = float64_to_uint32(x, &env->vfp.fp_status);
+    env->vfp.fp_status.float_rounding_mode = mode;
+
+    return res;
 }
-
-
 
 /* Integer to float conversion.  */
 float32 VFP_HELPER(uito, s)(float32 x, CPUCSKYState *env)
