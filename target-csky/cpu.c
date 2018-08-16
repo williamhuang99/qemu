@@ -183,6 +183,9 @@ static void csky_cpu_reset(CPUState *s)
     env->sce_condexec_bits_bk = 1;
     env->mmu.msa0 = 0x1e;
     env->mmu.msa1 = 0x16;
+#else
+    env->mmu.msa0 = 0xe;
+    env->mmu.msa1 = 0x6;
 #endif
 
 #ifdef TARGET_WORDS_BIGENDIAN

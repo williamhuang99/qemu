@@ -2071,9 +2071,13 @@ static inline void gen_mtcr_mmu(DisasContext *ctx, uint32_t cr_num, uint32_t rx)
         break;
     case 0x1e:
         store_cpu_field(cpu_R[rx], mmu.msa0);
+        gen_save_pc(ctx->pc + 4);
+        ctx->is_jmp = DISAS_UPDATE;
         break;
     case 0x1f:
         store_cpu_field(cpu_R[rx], mmu.msa1);
+        gen_save_pc(ctx->pc + 4);
+        ctx->is_jmp = DISAS_UPDATE;
         break;
     default:
         break;

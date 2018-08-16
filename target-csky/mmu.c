@@ -339,11 +339,6 @@ int mmu_get_physical_address(struct CPUCSKYState *env,
 
     if (address >= 0x80000000 && address < 0xa0000000) {
         if (super_mode) {
-#if !defined(TARGET_CSKYV2)
-            *physical = address - 0x80000000;
-            *prot = PAGE_READ | PAGE_WRITE;
-            return TLBRET_MATCH;
-#else
             if (!(env->mmu.msa0 & 0x2)) {
                 return TLBRET_INVALID;
             }
@@ -356,16 +351,10 @@ int mmu_get_physical_address(struct CPUCSKYState *env,
                 return TLBRET_MATCH;
             }
             return TLBRET_DIRTY;
-#endif
         }
         return TLBRET_BADADDR;
     } else if (address >= 0xa0000000 && address < 0xc0000000) {
         if (super_mode) {
-#if !defined(TARGET_CSKYV2)
-            *physical = address - 0xa0000000;
-            *prot = PAGE_READ | PAGE_WRITE;
-            return TLBRET_MATCH;
-#else
             if (!(env->mmu.msa1 & 0x2)) {
                 return TLBRET_INVALID;
             }
@@ -378,7 +367,6 @@ int mmu_get_physical_address(struct CPUCSKYState *env,
                 return TLBRET_MATCH;
             }
             return TLBRET_DIRTY;
-#endif
         }
         return TLBRET_BADADDR;
     } else if (address >= 0xc0000000) {

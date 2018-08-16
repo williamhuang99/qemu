@@ -579,6 +579,16 @@ gen_cprcr_cp15(DisasContext *ctx, uint32_t rz, uint32_t cr_num)
         t0 = load_cpu_field(mmu.mpar);
         tcg_gen_mov_tl(cpu_R[rz], t0);
         break;
+    case 0x1e:
+        /* CP15_msa0 */
+        t0 = load_cpu_field(mmu.msa0);
+        tcg_gen_mov_tl(cpu_R[rz], t0);
+        break;
+    case 0x1f:
+        /* CP15_msa1 */
+        t0 = load_cpu_field(mmu.msa1);
+        tcg_gen_mov_tl(cpu_R[rz], t0);
+        break;
     default:
         break;
     }
@@ -665,6 +675,16 @@ gen_cpwcr_cp15(DisasContext *ctx, uint32_t cr_num, uint32_t rx)
     case 0x1d:
         /* CP15_mpar */
         store_cpu_field(cpu_R[rx], mmu.mpar);
+        gen_save_pc(ctx->pc + 2);
+        ctx->is_jmp = DISAS_UPDATE;
+        break;
+    case 0x1e:
+        store_cpu_field(cpu_R[rx], mmu.msa0);
+        gen_save_pc(ctx->pc + 2);
+        ctx->is_jmp = DISAS_UPDATE;
+        break;
+    case 0x1f:
+        store_cpu_field(cpu_R[rx], mmu.msa1);
         gen_save_pc(ctx->pc + 2);
         ctx->is_jmp = DISAS_UPDATE;
         break;
