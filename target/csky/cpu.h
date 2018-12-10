@@ -343,31 +343,6 @@ struct CSKYCPU {
     CPUCSKYState env;
 };
 
-static inline CSKYCPU *csky_env_get_cpu(CPUCSKYState *env)
-{
-    return container_of(env, CSKYCPU, env);
-}
-
-static inline CPUCSKYState *csky_cpu_get_env(CPUState *obj)
-{
-    return &((CSKYCPU *)obj)->env;
-}
-
-static inline bool csky_has_feature(CPUCSKYState *env, uint64_t feature)
-{
-    if (env->features & feature) {
-        return true;
-    } else {
-        return false;
-    }
-}
-#define ENV_GET_CPU(e) CPU(csky_env_get_cpu(e))
-
-#define ENV_OFFSET offsetof(CSKYCPU, env)
-
-#define ENV_GET_MMU(e) csky_has_feature(e, CSKY_MMU)
-#define ENV_GET_ASID(e) env->mmu.meh && 0xff
-
 /* functions statement */
 CSKYCPU *cpu_csky_init(const char *cpu_model);
 void csky_translate_init(void);
@@ -410,16 +385,17 @@ target_ulong csky_do_semihosting(CPUCSKYState *env);
 #define CSKY_TBFLAG_CPID_SHIFT          6
 #define CSKY_TBFLAG_CPID_MASK           (0xF << CSKY_TBFLAG_CPID_SHIFT)
 #define CSKY_TBFLAG_ASID_SHIFT          10
+#define CSKY_TBFLAG_MP_ASID_MASK        (0xFFF << CSKY_TBFLAG_ASID_SHIFT)
 #define CSKY_TBFLAG_ASID_MASK           (0xFF << CSKY_TBFLAG_ASID_SHIFT)
-#define CSKY_TBFLAG_PSR_BM_SHIFT        18
+#define CSKY_TBFLAG_PSR_BM_SHIFT        22
 #define CSKY_TBFLAG_PSR_BM_MASK         (0x1 << CSKY_TBFLAG_PSR_BM_SHIFT)
-#define CSKY_TBFLAG_PSR_TM_SHIFT        19
+#define CSKY_TBFLAG_PSR_TM_SHIFT        23
 #define CSKY_TBFLAG_PSR_TM_MASK         (0x3 << CSKY_TBFLAG_PSR_TM_SHIFT)
-#define CSKY_TBFLAG_PSR_T_SHIFT         21
+#define CSKY_TBFLAG_PSR_T_SHIFT         25
 #define CSKY_TBFLAG_PSR_T_MASK          (0x1 << CSKY_TBFLAG_PSR_T_SHIFT)
-#define CSKY_TBFLAG_IDLY4_SHIFT         22
+#define CSKY_TBFLAG_IDLY4_SHIFT         26
 #define CSKY_TBFLAG_IDLY4_MASK          (0x7 << CSKY_TBFLAG_IDLY4_SHIFT)
-/* TB flags[25:31] are unused */
+/* TB flags[29:31] are unused */
 
 
 #define CSKY_TBFLAG_SCE_CONDEXEC(flag)  \
@@ -545,11 +521,53 @@ target_ulong csky_do_semihosting(CPUCSKYState *env);
 #define CSKY_MCIR_TTLBINV_ALL_SHIFT 24
 #define CSKY_MCIR_TTLBINV_ALL_MASK  (1 << CSKY_MCIR_TTLBINV_ALL_SHIFT)
 
-/* CK860 tlb instruction's reg mask */
-#define CSKY_MP_ASID_MASK           0xfff
-#define CSKY_MP_ASID_SHIFT          0
-#define CSKY_MP_VPN_MASK            0xfffff000
-#define CSKY_MP_VPN_SHIFT           12
+
+#define CSKY_VPN_MASK            0xfffff000
+#define CSKY_VPN_SHIFT           12
+#define CSKY_ASID_SHIFT          0
+
+/* C860 tlb instruction's reg mask */
+#define CSKY_MP_ASID_MASK        0xfff
+
+/* CK610 CK807 CK810 instruction's reg mask */
+#define CSKY_ASID_MASK           0xff
+
+static inline CSKYCPU *csky_env_get_cpu(CPUCSKYState *env)
+{
+    return container_of(env, CSKYCPU, env);
+}
+
+static inline CPUCSKYState *csky_cpu_get_env(CPUState *obj)
+{
+    return &((CSKYCPU *)obj)->env;
+}
+
+static inline bool csky_has_feature(CPUCSKYState *env, uint64_t feature)
+{
+    if (env->features & feature) {
+        return true;
+    } else {
+        return false;
+    }
+}
+static inline uint32_t csky_env_get_asid(CPUCSKYState *env)
+{
+    uint32_t asid;
+    if (env->features & CPU_C860) {
+        asid = env->mmu.meh & CSKY_MP_ASID_MASK;
+    } else {
+        asid = env->mmu.meh & CSKY_ASID_MASK;
+    }
+    return asid;
+
+}
+#define ENV_GET_CPU(e) CPU(csky_env_get_cpu(e))
+
+#define ENV_OFFSET offsetof(CSKYCPU, env)
+
+#define ENV_GET_MMU(e) csky_has_feature(e, CSKY_MMU)
+#define ENV_GET_ASID(e) csky_env_get_asid(e)
+
 
 static inline int cpu_mmu_index(CPUCSKYState *env, bool ifetch)
 {
@@ -559,20 +577,27 @@ static inline int cpu_mmu_index(CPUCSKYState *env, bool ifetch)
 static inline void cpu_get_tb_cpu_state(CPUCSKYState *env, target_ulong *pc,
         target_ulong *cs_base, uint32_t *flags)
 {
+    uint32_t mask;
     *pc = env->pc;
     *cs_base = 0;
+
+    if (env->features & CPU_C860) {
+        mask = CSKY_MP_ASID_MASK;
+    } else {
+        mask = CSKY_ASID_MASK;
+    }
 #if defined(TARGET_CSKYV2)
     *flags = (env->psr_s << CSKY_TBFLAG_PSR_S_SHIFT)
         | (env->psr_bm << CSKY_TBFLAG_PSR_BM_SHIFT)
         | (env->sce_condexec_bits << CSKY_TBFLAG_SCE_CONDEXEC_SHIFT)
-        | (env->mmu.meh & 0xff) << CSKY_TBFLAG_ASID_SHIFT
+        | ((env->mmu.meh & mask) << CSKY_TBFLAG_ASID_SHIFT)
         | (env->psr_tm << CSKY_TBFLAG_PSR_TM_SHIFT)
         | (env->psr_t << CSKY_TBFLAG_PSR_T_SHIFT)
         | (env->idly4_counter << CSKY_TBFLAG_IDLY4_SHIFT);
 #else
     *flags = (PSR_CPID(env->cp0.psr) << CSKY_TBFLAG_CPID_SHIFT)
         | (env->psr_s << CSKY_TBFLAG_PSR_S_SHIFT)
-        | (env->mmu.meh & 0xff) << CSKY_TBFLAG_ASID_SHIFT
+        | ((env->mmu.meh & mask) << CSKY_TBFLAG_ASID_SHIFT)
         | (env->psr_tm << CSKY_TBFLAG_PSR_TM_SHIFT)
         | (env->idly4_counter << CSKY_TBFLAG_IDLY4_SHIFT);
 #endif

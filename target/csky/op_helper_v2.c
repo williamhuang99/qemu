@@ -1317,9 +1317,16 @@ void helper_rfi(CPUCSKYState *env)
 
 void helper_meh_write(CPUCSKYState *env, uint32_t rx)
 {
+    uint32_t mask;
     CPUState *cs = CPU(csky_env_get_cpu(env));
+
+    if (env->features & CPU_C860) {
+        mask = CSKY_MP_ASID_MASK;
+    } else {
+        mask = CSKY_ASID_MASK;
+    }
     /* if ASID is Changed, QEMU TLB must be flush */
-    if ((env->mmu.meh & 0xff) != (rx & 0xff)) {
+    if ((env->mmu.meh & mask) != (rx & mask)) {
         tlb_flush(cs);
     }
 

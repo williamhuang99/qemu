@@ -97,14 +97,18 @@ void helper_tlbinv_all_s(CPUCSKYState *env)
     }
 }
 
-static inline uint32_t csky_get_asid(uint32_t rx)
+static inline uint32_t csky_get_asid(CPUCSKYState *env, uint32_t rx)
 {
-    return rx & CSKY_MP_ASID_MASK;
+    if (env->features & CPU_C860) {
+        return rx & CSKY_MP_ASID_MASK;
+    } else {
+        return rx & CSKY_ASID_MASK;
+    }
 }
 
 static inline uint32_t csky_get_vpn(CPUCSKYState *env, uint32_t rx)
 {
-    return rx & CSKY_MP_VPN_MASK & ~(env->mmu.mpr | 0x1fff);
+    return rx & CSKY_VPN_MASK & ~(env->mmu.mpr | 0x1fff);
 }
 
 void helper_tlbinv_asid(CPUCSKYState *env, uint32_t rx)
@@ -112,7 +116,7 @@ void helper_tlbinv_asid(CPUCSKYState *env, uint32_t rx)
     CPUState *cs = CPU(csky_env_get_cpu(env));
 
     if (env->full_mmu) {
-        uint32_t asid = csky_get_asid(rx);
+        uint32_t asid = csky_get_asid(env, rx);
         csky_tlb_t *ptlb = env->tlb_context->tlb;
         int i;
 
@@ -185,7 +189,7 @@ void helper_tlbinv_va(CPUCSKYState *env, uint32_t rx)
 
     if (env->full_mmu) {
         uint32_t vpn = csky_get_vpn(env, rx);
-        uint32_t asid = csky_get_asid(rx);
+        uint32_t asid = csky_get_asid(env, rx);
         csky_tlb_t *ptlb = env->tlb_context->tlb;
         int i;
 
@@ -225,7 +229,7 @@ void helper_tlbinv(CPUCSKYState *env)
         uint8_t asid;
         int i;
 
-        asid = env->mmu.meh & 0xff;
+        asid = ENV_GET_ASID(env);
         ptlb = &env->tlb_context->tlb[0];
 
         for (i = 0; i < CSKY_TLB_MAX; ++i) {
@@ -263,7 +267,7 @@ void csky_tlbwi(CPUCSKYState *env)
     }
 
     ptlb->VPN   = env->mmu.meh & ~(env->mmu.mpr | 0x1fff);
-    ptlb->ASID  = env->mmu.meh & 0xff;
+    ptlb->ASID  = ENV_GET_ASID(env);
     ptlb->G     = env->mmu.mel0 & env->mmu.mel1 & 0x1;
     ptlb->C0    = (env->mmu.mel0 >> 3) & 0x7;
     ptlb->C1    = (env->mmu.mel1 >> 3) & 0x7;
@@ -317,7 +321,7 @@ void csky_tlbwr(CPUCSKYState *env)
     }
 
     ptlb->VPN   = env->mmu.meh & ~(env->mmu.mpr | 0x1fff);
-    ptlb->ASID  = env->mmu.meh & 0xff;
+    ptlb->ASID  = ENV_GET_ASID(env);
     ptlb->G     = env->mmu.mel0 & env->mmu.mel1 & 0x1;
     ptlb->C0    = (env->mmu.mel0 >> 3) & 0x7;
     ptlb->C1    = (env->mmu.mel1 >> 3) & 0x7;
@@ -357,7 +361,7 @@ void csky_tlbp(CPUCSKYState *env)
     ptlb =  &env->tlb_context->tlb[index];
 
     if (ptlb->VPN == (env->mmu.meh & ~(env->mmu.mpr | 0x1fff))
-            && (ptlb->G == 1 || ptlb->ASID == (env->mmu.meh & 0xff))) {
+            && (ptlb->G == 1 || ptlb->ASID == ENV_GET_ASID(env))) {
         env->mmu.mir = index;
         return;
     }
@@ -365,7 +369,7 @@ void csky_tlbp(CPUCSKYState *env)
     index += 64;
     ptlb =  &env->tlb_context->tlb[index];
     if (ptlb->VPN == (env->mmu.meh & ~(env->mmu.mpr | 0x1fff))
-            && (ptlb->G == 1 || ptlb->ASID == (env->mmu.meh & 0xff))) {
+            && (ptlb->G == 1 || ptlb->ASID == ENV_GET_ASID(env))) {
         env->mmu.mir = index;
         return;
     }
@@ -549,7 +553,7 @@ int mmu_get_physical_address(struct CPUCSKYState *env,
 
 do_map:
     /* MMU is enable */
-    ASID = env->mmu.meh & 0xff;
+    ASID = ENV_GET_ASID(env);
     odd = (address >> page_bits) & 0x1;
     /* */
     index = (address >> (page_bits + 1)) & 0x3f;
@@ -629,7 +633,7 @@ hard_refill:
         }
 
         ptlb->VPN   = address & ~0x1fff;
-        ptlb->ASID  = env->mmu.meh & 0xff;
+        ptlb->ASID  = ENV_GET_ASID(env);
 #if !defined(TARGET_CSKYV2)
         ptlb->G     = (pte0 >> 6) & (pte1 >> 6) & 0X1;
         ptlb->C0    = (pte0 >> 9) & 0x7;
