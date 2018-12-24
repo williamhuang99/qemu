@@ -957,7 +957,8 @@ static void gen_branch16(DisasContext *ctx, uint32_t op, int offset)
             if (is_gdbserver_start) {
                 generate_exception(ctx, EXCP_DEBUG);
             } else {
-                generate_exception(ctx, EXCP_CSKY_BKPT);
+		gen_helper_bkpt_exit();
+                //generate_exception(ctx, EXCP_CSKY_BKPT);
             }
 #if !defined(CONFIG_USER_ONLY)
             ctx->cannot_be_traced = 1;

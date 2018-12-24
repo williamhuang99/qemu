@@ -20,6 +20,11 @@
 #include "exec/cpu_ldst.h"
 #include "exec/exec-all.h"
 
+void helper_bkpt_exit(void)
+{
+	exit(0);
+}
+
 void helper_exception(CPUCSKYState *env, uint32_t excp)
 {
     CPUState *cs = CPU(csky_env_get_cpu(env));
