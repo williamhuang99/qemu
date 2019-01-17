@@ -3025,7 +3025,7 @@ int main(int argc, char **argv, char **envp)
     const char *qtest_log = NULL;
     const char *pid_file = NULL;
     const char *incoming = NULL;
-    bool userconfig = true;
+    bool userconfig = false;
     bool nographic = false;
     int display_remote = 0;
     const char *log_mask = NULL;
