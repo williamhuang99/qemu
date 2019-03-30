@@ -274,6 +274,8 @@ void csky_cpu_do_interrupt(CPUState *cs)
     /* Set the vec in the psr */
     env->cp0.psr &= ~(0xff << 16);
     env->cp0.psr |= cs->exception_index << 16;
+    env->cp0.epsr &= ~(0xff << 16);
+    env->cp0.epsr |= cs->exception_index << 16;
     if (cs->exception_index >= 32) {
         env->intc_signals.isr &= ~0xff;
         env->intc_signals.isr |= cs->exception_index;
@@ -351,6 +353,8 @@ void csky_cpu_do_interrupt(CPUState *cs)
     /* Set the vec in the psr */
     env->cp0.psr &= ~(0x7f << 16);
     env->cp0.psr |= cs->exception_index << 16;
+    env->cp0.epsr &= ~(0x7f << 16);
+    env->cp0.epsr |= cs->exception_index << 16;
 
     /* FIXME  backup the sce_cond_bit to psr[cpidfiels] in cskyv2*/
     helper_update_psr(env);
