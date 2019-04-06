@@ -65,8 +65,8 @@ static void *create_smp_fdt(void)
     for (cpu = smp_cpus - 1; cpu >= 0; cpu--) {
         nodename = g_strdup_printf("/cpus/cpu@%d", cpu);
         qemu_fdt_add_subnode(fdt, nodename);
-        qemu_fdt_setprop_string(fdt, nodename, "status", "enable");
-        qemu_fdt_setprop_cell(fdt, nodename, "reg", 0x0);
+        qemu_fdt_setprop_string(fdt, nodename, "status", "ok");
+        qemu_fdt_setprop_cell(fdt, nodename, "reg", cpu);
         qemu_fdt_setprop_string(fdt, nodename, "device_type", "cpu");
         g_free(nodename);
     }
