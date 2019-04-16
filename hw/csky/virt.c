@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include "qemu/units.h"
 #include "qapi/error.h"
 #include "qemu-common.h"
 #include "target/csky/cpu.h"
@@ -25,7 +26,7 @@ static struct csky_boot_info virt_binfo = {
     .freq           = 50000000ll,
 };
 
-static void *create_smp_fdt(void)
+static void *create_smp_fdt(MachineState *machine)
 {
     void *fdt;
     int i, cpu;
@@ -54,7 +55,7 @@ static void *create_smp_fdt(void)
 
     nodename = g_strdup_printf("/memory");
     qemu_fdt_add_subnode(fdt, nodename);
-    qemu_fdt_setprop_cells(fdt, nodename, "reg", 0x0, 0x50000000);
+    qemu_fdt_setprop_cells(fdt, nodename, "reg", 0x0, machine->ram_size);
     qemu_fdt_setprop_string(fdt, nodename, "device_type", "memory");
     g_free(nodename);
 
@@ -130,7 +131,7 @@ static void *create_smp_fdt(void)
     return fdt;
 }
 
-static void *create_fdt(void)
+static void *create_fdt(MachineState *machine)
 {
     void *fdt;
     int i, cpu;
@@ -156,7 +157,7 @@ static void *create_fdt(void)
 
     nodename = g_strdup_printf("/memory");
     qemu_fdt_add_subnode(fdt, nodename);
-    qemu_fdt_setprop_cells(fdt, nodename, "reg", 0x0, 0x40000000);
+    qemu_fdt_setprop_cells(fdt, nodename, "reg", 0x0, machine->ram_size);
     qemu_fdt_setprop_string(fdt, nodename, "device_type", "memory");
     g_free(nodename);
 
@@ -306,8 +307,8 @@ static void mp860_init(MachineState *machine)
     /* load dtb or create fdt */
     virt_binfo.dtb_filename = qemu_opt_get(qemu_get_machine_opts(), "dtb");
     if (!virt_binfo.dtb_filename) {
-        fdt = create_smp_fdt();
-        ram_size = 0x50000000;
+        fdt = create_smp_fdt(machine);
+        ram_size = machine->ram_size;
         qemu_fdt_dumpdtb(fdt, fdt_totalsize(fdt));
         rom_add_blob_fixed_as("mrom.fdt", fdt, fdt_totalsize(fdt),
                 virt_binfo.dtb_addr & 0x1fffffff,&address_space_memory);
@@ -318,7 +319,7 @@ static void mp860_init(MachineState *machine)
     MemoryRegion *sysmem = get_system_memory();
     MemoryRegion *ram = g_new(MemoryRegion, 1);
 
-    memory_region_allocate_system_memory(ram, NULL, "ram", 0x50000000);
+    memory_region_allocate_system_memory(ram, NULL, "ram", ram_size);
     memory_region_add_subregion(sysmem, 0, ram);
 
     /*
@@ -437,8 +438,8 @@ static void virt_init(MachineState *machine)
                 exit(1);
             }
         } else {
-            fdt = create_fdt();
-            ram_size = 0x40000000;
+            fdt = create_fdt(machine);
+            ram_size = machine->ram_size;
             qemu_fdt_dumpdtb(fdt, fdt_totalsize(fdt));
             rom_add_blob_fixed_as("mrom.fdt", fdt, fdt_totalsize(fdt),
                 virt_binfo.dtb_addr & 0x1fffffff,&address_space_memory);
@@ -525,6 +526,7 @@ static void virt_class_init(ObjectClass *oc, void *data)
 #else
         MACHINE_CLASS(oc)->default_cpu_type = CSKY_CPU_TYPE_NAME("ck610ef");
 #endif
+        MACHINE_CLASS(oc)->default_ram_size = 0x50000000;
 }
 
 static const TypeInfo virt_type = {
