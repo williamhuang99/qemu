@@ -258,9 +258,9 @@ static void csky_cpu_reset(CPUState *s)
     env->psr_bm = PSR_BM(env->cp0.psr);
     env->sce_condexec_bits = 1;
     env->sce_condexec_bits_bk = 1;
+#endif
     env->mmu.msa0 = 0x1e;
     env->mmu.msa1 = 0x16;
-#endif
 
 #ifdef TARGET_WORDS_BIGENDIAN
     env->cp0.ccr = 0x80;

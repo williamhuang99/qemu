@@ -556,31 +556,49 @@ gen_cprcr_cp15(DisasContext *ctx, uint32_t rz, uint32_t cr_num)
         /* CP15_CR12 */
         t0 = load_cpu_field(mmu.cr12);
         tcg_gen_mov_tl(cpu_R[rz], t0);
+        tcg_temp_free(t0);
         break;
     case 0xd:
         /* CP15_CR13 */
         t0 = load_cpu_field(mmu.cr13);
         tcg_gen_mov_tl(cpu_R[rz], t0);
+        tcg_temp_free(t0);
         break;
     case 0xe:
         /* CP15_CR14 */
         t0 = load_cpu_field(mmu.cr14);
         tcg_gen_mov_tl(cpu_R[rz], t0);
+        tcg_temp_free(t0);
         break;
     case 0xf:
         /* CP15_CR15 */
         t0 = load_cpu_field(mmu.cr15);
         tcg_gen_mov_tl(cpu_R[rz], t0);
+        tcg_temp_free(t0);
         break;
     case 0x10:
         /* CP15_CR16 */
         t0 = load_cpu_field(mmu.cr16);
         tcg_gen_mov_tl(cpu_R[rz], t0);
+        tcg_temp_free(t0);
         break;
     case 0x1d:
         /* CP15_mpgd */
         t0 = load_cpu_field(mmu.mpgd1);
         tcg_gen_mov_tl(cpu_R[rz], t0);
+        tcg_temp_free(t0);
+        break;
+    case 0x1e:
+        /* CP15_msa0 */
+        t0 = load_cpu_field(mmu.msa0);
+        tcg_gen_mov_tl(cpu_R[rz], t0);
+        tcg_temp_free(t0);
+        break;
+    case 0x1f:
+        /* CP15_msa1 */
+        t0 = load_cpu_field(mmu.msa1);
+        tcg_gen_mov_tl(cpu_R[rz], t0);
+        tcg_temp_free(t0);
         break;
     default:
         break;
@@ -671,6 +689,18 @@ gen_cpwcr_cp15(DisasContext *ctx, uint32_t cr_num, uint32_t rx)
         gen_save_pc(ctx->pc + 2);
         ctx->base.is_jmp = DISAS_UPDATE;
         break;
+    case 0x1e:
+        /* CP15_msa0 */
+        store_cpu_field(cpu_R[rx], mmu.msa0);
+        gen_save_pc(ctx->pc + 2);
+        ctx->base.is_jmp = DISAS_UPDATE;
+        break;
+    case 0x1f:
+        /* CP15_msa1 */
+        store_cpu_field(cpu_R[rx], mmu.msa1);
+        gen_save_pc(ctx->pc + 2);
+        ctx->base.is_jmp = DISAS_UPDATE;
+        break;
     default:
         break;
     }
@@ -749,7 +779,8 @@ static inline void subc(int rx, int ry)
     gen_set_label(l1);
     tcg_gen_setcond_tl(TCG_COND_GEU, cpu_c, t1, cpu_R[ry]);
     gen_set_label(l2);
-
+    tcg_temp_free(t0);
+    tcg_temp_free(t1);
 }
 
 static inline void lsr(int rx, int ry)

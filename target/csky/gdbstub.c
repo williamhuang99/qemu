@@ -79,7 +79,7 @@ static int cskyv1cpu_gdb_read_register(CPUCSKYState *env,
         /* prsr */
         ret = gdb_get_reg32(mem_buf, env->cp0.prsr);
         break;
-    case 111 ... 120:
+    case 111 ... 119:
 #endif
     case 121 ... 127:
         /* cp1cr0 ~ cp1cr6 */
@@ -295,7 +295,7 @@ static int cskyv1cpu_gdb_write_register(CPUCSKYState *env,
     case 110:
         env->cp0.prsr = tmp;
         return 4;
-    case 111 ... 120:
+    case 111 ... 119:
         return 4;
 #endif
     case 121 ... 123:

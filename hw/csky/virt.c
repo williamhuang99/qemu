@@ -157,7 +157,11 @@ static void *create_fdt(MachineState *machine)
 
     nodename = g_strdup_printf("/memory");
     qemu_fdt_add_subnode(fdt, nodename);
-    qemu_fdt_setprop_cells(fdt, nodename, "reg", 0x0, machine->ram_size);
+#ifdef TARGET_CSKYV2
+    qemu_fdt_setprop_cells(fdt, nodename, "reg", 0, machine->ram_size);
+#else
+    qemu_fdt_setprop_cells(fdt, nodename, "reg", 0x10000000, machine->ram_size - 0x10000000);
+#endif
     qemu_fdt_setprop_string(fdt, nodename, "device_type", "memory");
     g_free(nodename);
 
@@ -523,10 +527,11 @@ static void virt_class_init(ObjectClass *oc, void *data)
         MACHINE_CLASS(oc)->max_cpus = 128;
 #ifdef TARGET_CSKYV2
         MACHINE_CLASS(oc)->default_cpu_type = CSKY_CPU_TYPE_NAME("ck810f");
+        MACHINE_CLASS(oc)->default_ram_size = 0x50000000;
 #else
         MACHINE_CLASS(oc)->default_cpu_type = CSKY_CPU_TYPE_NAME("ck610ef");
+        MACHINE_CLASS(oc)->default_ram_size = 0x40000000;
 #endif
-        MACHINE_CLASS(oc)->default_ram_size = 0x50000000;
 }
 
 static const TypeInfo virt_type = {
