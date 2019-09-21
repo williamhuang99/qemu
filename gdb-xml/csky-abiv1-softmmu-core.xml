@@ -105,7 +105,6 @@
   <reg name="cr28" bitsize="32" regnum="117" group="cr"/>
   <reg name="cr29" bitsize="32" regnum="118" group="cr"/>
   <reg name="cr30" bitsize="32" regnum="119" group="cr"/>
-  <reg name="cr30" bitsize="32" regnum="120" group="cr"/>
   <reg name="cp1cr0" bitsize="32" regnum="121" group="fcr"/>
   <reg name="cp1cr1" bitsize="32" regnum="122" group="fcr"/>
   <reg name="cp1cr2" bitsize="32" regnum="123" group="fcr"/>
