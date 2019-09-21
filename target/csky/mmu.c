@@ -85,6 +85,7 @@ void helper_tlbinv_all(CPUCSKYState *env)
         memset(env->tlb_context->tlb, 0,
                sizeof(struct csky_tlb_t) * CSKY_TLB_MAX);
     }
+    tb_flush(cs);
     tlb_flush(cs);
 }
 
