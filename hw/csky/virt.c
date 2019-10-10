@@ -161,6 +161,7 @@ static void *create_fdt(MachineState *machine)
     qemu_fdt_setprop_cells(fdt, nodename, "reg", 0, machine->ram_size);
 #else
     qemu_fdt_setprop_cells(fdt, nodename, "reg", 0x10000000, machine->ram_size - 0x10000000);
+    virt_binfo.loader_start = 0x10000000;
 #endif
     qemu_fdt_setprop_string(fdt, nodename, "device_type", "memory");
     g_free(nodename);

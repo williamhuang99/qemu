@@ -130,8 +130,7 @@ static void do_cpu_reset(void *opaque)
 
     env->pc = info->entry;
     deposit32(mcc->rmr, 12, 20, info->entry & 0xfffff000);
-    if ((info->kernel_flags == KERNEL_BIN_AND_BIOS) |
-        (info->kernel_flags == KERNEL_BIN_NO_BIOS)) {
+    if (info->kernel_flags == KERNEL_BIN_AND_BIOS) {
         cs->exception_index = EXCP_CSKY_RESET;
         env->cp0.vbr = env->boot_info->loader_start;
     } else {
@@ -263,9 +262,9 @@ static void csky_load_kernel_notify(Notifier *notifier, void *data)
                     kernel_flags = KERNEL_UIMAGE;
                 } else {
                     kernel_size  = load_image_targphys(info->kernel_filename,
-                        info->loader_start, info->ram_size);
+                        info->loader_start, 0x1000000);
                     if (kernel_size > 0) {
-                        entry = info->loader_start;
+                        entry = 0x80000000 + (info->loader_start & 0x1fffffff);
                         kernel_flags =  KERNEL_BIN_NO_BIOS;
                     } else {
                         fprintf(stderr, "qemu: could not load kernel '%s'\n",
