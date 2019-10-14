@@ -124,10 +124,16 @@ static void *create_smp_fdt(MachineState *machine)
 
     qemu_fdt_add_subnode(fdt, "/chosen");
     //"console=ttyS0,115200
-    qemu_fdt_setprop_string(fdt, "/chosen", "bootargs",
-    "console=ttyS0,115200 \
-     rdinit=/sbin/init root=/dev/ram0 \
-     clk_ignore_unused loglevel=7");
+    if (machine->kernel_cmdline) {
+        qemu_fdt_setprop_string(fdt, "/chosen", "bootargs", machine->kernel_cmdline);
+    }
+    else {
+        qemu_fdt_setprop_string(fdt, "/chosen", "bootargs",
+        "console=ttyS0,115200 \
+         rdinit=/sbin/init root=/dev/ram0 \
+         clk_ignore_unused loglevel=7");
+    }
+
     return fdt;
 }
 
@@ -251,8 +257,13 @@ static void *create_fdt(MachineState *machine)
     }
 
     qemu_fdt_add_subnode(fdt, "/chosen");
-    qemu_fdt_setprop_string(fdt, "/chosen", "bootargs",
-    "console=ttyS0,115200 rdinit=/sbin/init root=/dev/ram0");
+    if (machine->kernel_cmdline) {
+        qemu_fdt_setprop_string(fdt, "/chosen", "bootargs", machine->kernel_cmdline);
+    }
+    else {
+        qemu_fdt_setprop_string(fdt, "/chosen", "bootargs",
+        "console=ttyS0,115200 rdinit=/sbin/init root=/dev/ram0");
+    }
     return fdt;
 }
 
