@@ -538,7 +538,7 @@ static void virt_class_init(ObjectClass *oc, void *data)
         MACHINE_CLASS(oc)->init = virt_init;
         MACHINE_CLASS(oc)->max_cpus = 128;
 #ifdef TARGET_CSKYV2
-        MACHINE_CLASS(oc)->default_cpu_type = CSKY_CPU_TYPE_NAME("ck810f");
+        MACHINE_CLASS(oc)->default_cpu_type = CSKY_CPU_TYPE_NAME("ck860fv");
         MACHINE_CLASS(oc)->default_ram_size = 0x50000000;
 #else
         MACHINE_CLASS(oc)->default_cpu_type = CSKY_CPU_TYPE_NAME("ck610ef");
