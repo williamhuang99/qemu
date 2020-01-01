@@ -51,12 +51,44 @@ static DeviceState *micdev;
 #define FDT_PLIC_ADDR_CELLS   0
 #define FDT_PLIC_INT_CELLS    1
 
+static void create_pcie_irq_map(void *fdt, char *nodename, uint32_t phandle)
+{
+    uint32_t full_irq_map[4 * 4 * 6] = {0};
+    uint32_t *irq_map = full_irq_map;
+    int devfn, pin;
+
+    for (devfn = 0; devfn <= 0x18; devfn += 0x8) {
+        for (pin = 0; pin < 4; pin++) {
+            int irq_nr = 60 + ((pin + PCI_SLOT(devfn)) % PCI_NUM_PINS);
+            int i;
+
+            uint32_t map[] = {
+                devfn << 8, 0, 0,     /* devfn */
+                pin + 1,              /* PCI pin */
+                phandle, irq_nr};     /* GIC irq */
+
+            /* Convert map to big endian */
+            for (i = 0; i < 6; i++) {
+                irq_map[i] = cpu_to_be32(map[i]);
+            }
+            irq_map += 6;
+        }
+    }
+
+    qemu_fdt_setprop(fdt, nodename, "interrupt-map", full_irq_map,
+                     sizeof(full_irq_map));
+
+    qemu_fdt_setprop_cells(fdt, nodename, "interrupt-map-mask", 0x1800, 0, 0,
+                           0x7);
+}
+
 static void *create_smp_fdt(MachineState *machine)
 {
     void *fdt;
     int i, cpu;
     char *nodename;
     int fdt_size;
+    uint32_t phandle;
 
     fdt = create_device_tree(&fdt_size);
     if (!fdt) {
@@ -103,6 +135,7 @@ static void *create_smp_fdt(MachineState *machine)
     qemu_fdt_setprop_string(fdt, nodename, "compatible", "csky,mpintc");
     qemu_fdt_setprop(fdt, nodename, "interrupt-controller", NULL, 0);
     qemu_fdt_setprop_cells(fdt, nodename, "phandle", 0x2);
+    phandle = qemu_fdt_get_phandle(fdt, nodename);
     g_free(nodename);
 
     nodename = g_strdup_printf("/soc/timer");
@@ -171,6 +204,7 @@ static void *create_smp_fdt(MachineState *machine)
         1, FDT_PCI_RANGE_MMIO,
         2, memmap[VIRT_PCIE_MMIO].base,
         1, memmap[VIRT_PCIE_MMIO].base, 2, memmap[VIRT_PCIE_MMIO].size);
+    create_pcie_irq_map(fdt, nodename, phandle);
     g_free(nodename);
 
     qemu_fdt_add_subnode(fdt, "/chosen");
