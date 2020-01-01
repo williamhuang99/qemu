@@ -17,6 +17,8 @@
 #include "hw/csky/cskydev.h"
 #include "hw/char/csky_uart.h"
 #include "hw/timer/csky_mptimer.h"
+#include "hw/pci/pci.h"
+#include "hw/pci-host/gpex.h"
 
 #include <libfdt.h>
 static struct csky_boot_info virt_binfo = {
@@ -25,6 +27,24 @@ static struct csky_boot_info virt_binfo = {
     .magic          = 0x20150401,
     .freq           = 50000000ll,
 };
+
+enum {
+    VIRT_PCIE,
+    VIRT_PCIE_MMIO,
+    VIRT_PCIE_PIO,
+    VIRT_PCIE_ECAM,
+};
+
+static const struct MemMapEntry {
+    hwaddr base;
+    hwaddr size;
+} memmap[] = {
+    [VIRT_PCIE_MMIO] =  {0xd0000000, 0x10000000},
+    [VIRT_PCIE_ECAM] =  {0xe0000000, 0x01000000},
+    [VIRT_PCIE_PIO] =   {0xe1000000, 0x00010000},
+};
+
+static DeviceState *micdev;
 
 static void *create_smp_fdt(MachineState *machine)
 {
@@ -310,13 +330,57 @@ static bool get_ramsize_from_dtb(unsigned int *ram_size, unsigned int *base)
     }
 }
 
+static void gpex_pcie_init(void)
+{
+    DeviceState *dev;
+    MemoryRegion *ecam_alias, *ecam_reg;
+    MemoryRegion *mmio_alias, *mmio_reg;
+    hwaddr ecam_base, ecam_size;
+    hwaddr mmio_base, mmio_size;
+    hwaddr pio_base;
+    qemu_irq irq;
+    int i;
+
+    dev = qdev_create(NULL, TYPE_GPEX_HOST);
+    qdev_init_nofail(dev);
+
+    /* ECAM space */
+    ecam_base = memmap[VIRT_PCIE_ECAM].base;
+    ecam_size = memmap[VIRT_PCIE_ECAM].size;
+    ecam_alias = g_new0(MemoryRegion, 1);
+    ecam_reg = sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0);
+
+    memory_region_init_alias(ecam_alias, OBJECT(dev), "pcie-ecam", ecam_reg,
+                             0, ecam_size);
+    memory_region_add_subregion(get_system_memory(), ecam_base, ecam_alias);
+
+    /* MMIO space */
+    mmio_base = memmap[VIRT_PCIE_MMIO].base;
+    mmio_size = memmap[VIRT_PCIE_MMIO].size;
+    mmio_alias = g_new0(MemoryRegion, 1);
+    mmio_reg = sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 1);
+    memory_region_init_alias(mmio_alias, OBJECT(dev), "pcie-mmio", mmio_reg,
+                             mmio_base, mmio_size);
+    memory_region_add_subregion(get_system_memory(), mmio_base, mmio_alias);
+
+    /* IO port space */
+    pio_base = memmap[VIRT_PCIE_PIO].base;
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 2, pio_base);
+
+    for (i = 0; i < GPEX_NUM_IRQS; i++) {
+        irq = qdev_get_gpio_in(micdev, 60 + i);
+        sysbus_connect_irq(SYS_BUS_DEVICE(dev), i, irq);
+        gpex_set_irq_num(GPEX_HOST(dev), i, 60 + i);
+    }
+}
+
 static void mp860_init(MachineState *machine)
 {
     ObjectClass     *cpu_oc;
     Object          *cpuobj;
     CSKYCPU         *cpu = NULL, *last_cpu;
 
-    DeviceState     *micdev, *mptimerdev;
+    DeviceState     *mptimerdev;
     SysBusDevice    *micbusdev, *mptimerbusdev;
     int n, i;
     void *fdt;
@@ -390,6 +454,12 @@ static void mp860_init(MachineState *machine)
         last_cpu = csky_env_get_cpu(last_cpu->env.next_cpu);
         cpudev = DEVICE(last_cpu);
     }
+
+    /*
+     * create GPEX PCIe
+     */
+    gpex_pcie_init();
+
     /*
      * use C-SKY MultiCore timer
      */
