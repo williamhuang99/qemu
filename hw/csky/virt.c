@@ -19,6 +19,7 @@
 #include "hw/timer/csky_mptimer.h"
 #include "hw/pci/pci.h"
 #include "hw/pci-host/gpex.h"
+#include "hw/display/ramfb.h"
 
 #include <libfdt.h>
 static struct csky_boot_info virt_binfo = {
@@ -679,6 +680,8 @@ static void virt_class_init(ObjectClass *oc, void *data)
         MACHINE_CLASS(oc)->default_cpu_type = CSKY_CPU_TYPE_NAME("ck610ef");
         MACHINE_CLASS(oc)->default_ram_size = 0x40000000;
 #endif
+        machine_class_allow_dynamic_sysbus_dev(MACHINE_CLASS(oc),
+                                               TYPE_RAMFB_DEVICE);
 }
 
 static const TypeInfo virt_type = {
